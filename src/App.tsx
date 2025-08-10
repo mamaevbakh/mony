@@ -9,6 +9,7 @@ export default function App() {
         <CopilotChat
         
           labels={{
+            title: "Bubble Copilot",
             initial: "Hi! 👋 How can I assist you today?",
           }}
           instructions="You are a helpful assistant embedded in Bubble."
