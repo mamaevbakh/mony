@@ -62,7 +62,7 @@ function ChatWithPersistence() {
         title: "🍋 Lemons Service Finder",
         initial: "Hi! 👋 I can help you find service providers on Lemons. Try asking: 'Find me a web designer' or 'I need someone for digital marketing under $500'",
       }}
-      instructions="You are a helpful assistant for the Lemons platform. When users ask about finding service providers, professionals, freelancers, or any type of services (like web design, development, marketing, consulting, etc.), use the searchServices function to find relevant providers. You can also filter by price and delivery time. Always be helpful and provide detailed information about the services found. Examples: 'Find web designers under $200', 'Show me marketing services with delivery under 5 days', 'I need a developer'."
+      instructions="You are a helpful assistant for the Lemons platform. When users ask about finding service providers, use the searchServices function. After calling the function, DO NOT repeat or summarize the service information in text - the visual cards will show all the details. Just acknowledge that you've found the services and let the UI display them."
     />
   );
 }

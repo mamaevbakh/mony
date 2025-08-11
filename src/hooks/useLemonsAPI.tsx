@@ -50,14 +50,8 @@ export function useLemonsAPI() {
         if (serviceType) {
           constraints.push({
             key: "title",
-            constraint_type: "text contains",
-            value: serviceType
-          });
-          // Also search in description
-          constraints.push({
-            key: "description", 
-            constraint_type: "text contains",
-            value: serviceType
+            constraint_type: "text contains", 
+            value: serviceType.toLowerCase()
           });
         }
         
@@ -88,12 +82,11 @@ export function useLemonsAPI() {
         }
         
         params.append("limit", limit.toString());
-        params.append("sort_field", "price"); // Sort by price
-        params.append("descending", "false"); // Ascending order
+        params.append("sort_field", "price");
+        params.append("descending", "false");
 
         const url = `${baseUrl}?${params.toString()}`;
 
-        // Call the Lemons Bubble API with bearer token
         const response = await fetch(url, {
           method: 'GET',
           headers: {
@@ -109,17 +102,18 @@ export function useLemonsAPI() {
         const data = await response.json();
         const services: Service[] = data.response?.results || [];
 
+        // Return minimal data - the UI component will handle the display
         return {
           success: true,
           services,
-          totalFound: services.length,
           searchCriteria: {
             serviceType,
             maxPrice,
             maxDeliveryDays,
             limit
           },
-          message: `Found ${services.length} service${services.length !== 1 ? 's' : ''}${serviceType ? ` for "${serviceType}"` : ''}`
+          // Remove or minimize the message to avoid duplication
+          displayOnly: true // Flag to indicate this should only show UI, not text
         };
 
       } catch (error) {
@@ -175,7 +169,7 @@ export function useLemonsAPI() {
         );
       }
 
-      return <div></div>; // Return empty div instead of null
+      return <div></div>;
     }
   });
 }
@@ -223,7 +217,6 @@ function ServiceResults({ services, searchCriteria }: {
         </h3>
       </div>
       
-      {/* Search criteria summary */}
       {(searchCriteria.maxPrice || searchCriteria.maxDeliveryDays) && (
         <div style={{ 
           marginBottom: '16px',
@@ -249,7 +242,7 @@ function ServiceResults({ services, searchCriteria }: {
   );
 }
 
-// Individual Service Card Component
+// Individual Service Card Component - same as before
 function ServiceCard({ service }: { service: Service }) {
   return (
     <div style={{
@@ -326,7 +319,6 @@ function ServiceCard({ service }: { service: Service }) {
         
         <button
           onClick={() => {
-            // You can implement contact functionality here
             console.log('Contact service provider:', service);
           }}
           style={{
