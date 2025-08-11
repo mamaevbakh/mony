@@ -5,6 +5,13 @@ html, body, #root {
   padding: 0;
 }
 * { box-sizing: border-box; }
+
+/* Spinner animation for loading states */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
 /* Make Copilot chat fill the container */
 .copilotkit-container,
 .copilotkit-chat,
