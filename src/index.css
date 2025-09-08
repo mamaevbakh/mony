@@ -3,6 +3,8 @@ html, body, #root {
   width: 100%;
   margin: 0;
   padding: 0;
+  -webkit-text-size-adjust: 100%; /* prevent iOS auto text zoom */
+  touch-action: manipulation; /* hint to prevent double-tap zoom */
 }
 * { box-sizing: border-box; }
 
