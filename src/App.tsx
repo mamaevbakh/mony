@@ -62,7 +62,12 @@ function ChatWithPersistence() {
         title: "🍋 Lemons Service Finder",
         initial: "Hi! 👋 I can help you find service providers on Lemons. Try asking: 'Find me a web designer' or 'I need someone for digital marketing under $500'",
       }}
-      instructions="You are a helpful assistant for the Lemons platform. When users ask about finding service providers, use the searchServices function. After calling the function, DO NOT repeat or summarize the service information in text - the visual cards will show all the details. Just acknowledge that you've found the services and let the UI display them."
+      instructions="You are a helpful assistant for the Lemons platform.
+If the user asks for a better service title:
+1. Propose a concise, compelling title (<= 80 chars).
+2. If the user accepts OR clearly asks you to apply it, call updateServiceTitle with serviceId and newTitle.
+3. Do NOT restate service fields after updating; rely on the UI.
+Use searchServices for discovery, updateServiceTitle only for confirmed title changes."
     />
   );
 }
