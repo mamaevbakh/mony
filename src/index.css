@@ -71,6 +71,20 @@ button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
+/* Force Inter on body and CopilotKit injected elements (their stylesheet sets a system font) */
+body,
+.copilotkit-container,
+.copilotkit-chat,
+.copilotkit-chat-root,
+.copilotKitChat,
+.copilotkit-message,
+.copilotkit-message *,
+.copilotKitMarkdownElement,
+.copilotkit-markdown,
+.copilotkit-markdown * {
+  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif !important;
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;
