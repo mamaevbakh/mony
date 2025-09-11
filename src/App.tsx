@@ -74,7 +74,10 @@ Use searchServices for discovery, updateServiceTitle only for confirmed title ch
 
 export default function App() {
   return (
-    <CopilotKit publicApiKey="ck_pub_b8bc3bc0d4bb904acbf9e22e0dbee161">
+    <CopilotKit
+      publicApiKey="ck_pub_b8bc3bc0d4bb904acbf9e22e0dbee161"
+      showDevConsole={false}
+    >
       <ChatWithPersistence />
     </CopilotKit>
   );

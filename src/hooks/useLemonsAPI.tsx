@@ -146,11 +146,41 @@ export function useLemonsAPI() {
       }
     },
     render: ({ status, result }) => {
-      if (status === 'executing') return <div style={{ padding: 12 }}>🍋 Updating title...</div>;
+      if (status === 'executing') {
+        return (
+          <div
+            style={{
+              padding: 12,
+              background: '#F2E6D9',
+              color: '#000000',
+              border: '1px solid #E4D9CD',
+              borderRadius: 24,
+              fontSize: 14,
+              lineHeight: 1.5,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <span aria-hidden>⏳</span>
+            <span>Updating title…</span>
+          </div>
+        );
+      }
       if (status === 'complete' && result?.success) {
         return (
-          <div style={{ padding: 12, background: '#ecfdf5', border: '1px solid #6ee7b7', borderRadius: 8, fontSize: 14 }}>
-            ✅ Service title set to: <strong>{result.newTitle}</strong>
+          <div
+            style={{
+              padding: 12,
+              background: '#F2E6D9',
+              color: '#000000',
+              border: '1px solid #E4D9CD',
+              borderRadius: 24,
+              fontSize: 14,
+              lineHeight: 1.5,
+            }}
+          >
+            ✅ Service title set to: <strong style={{ color: 'inherit' }}>{result.newTitle}</strong>
           </div>
         );
       }
@@ -221,8 +251,6 @@ function ServiceCard({ service, selected }: { service: Service; selected?: boole
           <span>⏱️</span>
           <span>{service.delivery_days} day{service.delivery_days !== 1 ? 's' : ''} delivery</span>
         </div>
-        <button onClick={() => { window.postMessage({ type: 'ACTIVE_SERVICE', service }, '*'); }}
-          style={{ backgroundColor: selected ? '#f59e0b' : '#fbbf24', color: '#1e293b', border: 'none', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}>Select</button>
         <button onClick={() => { console.log('Contact service provider:', service); }}
           style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', marginLeft: 'auto', transition: 'background-color 0.2s' }}
           onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#059669'; }}
