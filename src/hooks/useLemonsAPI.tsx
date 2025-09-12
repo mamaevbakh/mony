@@ -72,10 +72,8 @@ export function useLemonsAPI() {
 
   // Expose active service to LLM
   useCopilotReadable({
-    // Some versions expect 'name'; fallback to adding as property on value object if API mismatches.
-    // Using value object embedding name for robustness.
     value: activeService ? JSON.stringify(activeService) : 'null',
-    description: 'active_service: Currently selected service JSON. Use its _id if user wants to update title and no explicit serviceId provided.'
+    description: 'active_service: Currently selected service JSON. Prefer this as the source of truth after calling getServiceById.',
   });
 
   // Read serviceId from iframe query param (?serviceId=xyz)
@@ -162,6 +160,66 @@ export function useLemonsAPI() {
       }
       return <div />;
     }
+  });
+
+  // getServiceById: fetch service and attach to context
+  useCopilotAction({
+    name: 'getServiceById',
+    description: 'Fetch the latest service details from Bubble by unique id and attach them to context as active_service.',
+    parameters: [
+      { name: 'serviceId', type: 'string', description: 'Bubble unique ID (_id) of the service to fetch', required: true },
+    ],
+    handler: async ({ serviceId }: { serviceId: string }) => {
+      const svc = await refreshServiceInfo(serviceId);
+      if (!svc) {
+        return { success: false, message: 'Could not fetch the service. Please check the id.' };
+      }
+      return { success: true, service: svc };
+    },
+    render: ({ status, result }) => {
+      if (status === 'executing') {
+        return (
+          <div
+            style={{
+              padding: 12,
+              background: '#F2E6D9',
+              color: '#000000',
+              border: '1px solid #E4D9CD',
+              borderRadius: 24,
+              fontSize: 14,
+              lineHeight: 1.5,
+            }}
+          >
+            Loading service details…
+          </div>
+        );
+      }
+      if (status === 'complete' && result?.success) {
+        return (
+          <div
+            style={{
+              padding: 12,
+              background: '#F2E6D9',
+              color: '#000000',
+              border: '1px solid #E4D9CD',
+              borderRadius: 24,
+              fontSize: 14,
+              lineHeight: 1.5,
+            }}
+          >
+            Service context updated.
+          </div>
+        );
+      }
+      if (status === 'complete' && !result?.success) {
+        return (
+          <div style={{ padding: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 14, color: '#b91c1c' }}>
+            ❌ {result?.message}
+          </div>
+        );
+      }
+      return <div />;
+    },
   });
 
   // updateServiceTitle (serviceId optional)

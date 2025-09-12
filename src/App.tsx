@@ -89,6 +89,7 @@ If the user asks for a better service title:
 1. Propose a concise, compelling title (<= 80 chars).
 2. If the user accepts OR clearly asks you to apply it, call updateServiceTitle with serviceId and newTitle.
 3. Do NOT restate service fields after updating; rely on the UI.
+Whenever the user includes a service id in their message (or mentions the active service changed), first call getServiceById with that id to fetch the latest details and attach them to context as active_service. Then proceed with any follow-up.
 Use searchServices for discovery, updateServiceTitle only for confirmed title changes."
     />
   );
