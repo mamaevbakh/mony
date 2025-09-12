@@ -178,50 +178,7 @@ export function useLemonsAPI() {
       }
       return { success: true, service: svc };
     },
-    render: ({ status, result }) => {
-      if (status === 'executing') {
-        return (
-          <div
-            style={{
-              padding: 12,
-              background: '#F2E6D9',
-              color: '#000000',
-              border: '1px solid #E4D9CD',
-              borderRadius: 24,
-              fontSize: 14,
-              lineHeight: 1.5,
-            }}
-          >
-            Loading service details…
-          </div>
-        );
-      }
-      if (status === 'complete' && result?.success) {
-        return (
-          <div
-            style={{
-              padding: 12,
-              background: '#F2E6D9',
-              color: '#000000',
-              border: '1px solid #E4D9CD',
-              borderRadius: 24,
-              fontSize: 14,
-              lineHeight: 1.5,
-            }}
-          >
-            Service context updated.
-          </div>
-        );
-      }
-      if (status === 'complete' && !result?.success) {
-        return (
-          <div style={{ padding: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 14, color: '#b91c1c' }}>
-            ❌ {result?.message}
-          </div>
-        );
-      }
-      return <div />;
-    },
+    render: () => "",
   });
 
   // updateServiceTitle (serviceId optional)

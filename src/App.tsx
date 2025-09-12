@@ -21,7 +21,7 @@ function ChatWithPersistence() {
     }
   }, [JSON.stringify(messages)]);
 
-  // On every new user message: if it contains a service id, attach a tool-style context (ActionExecution/Result)
+  // On every new user message: always try to attach fresh service context for this turn
   useEffect(() => {
     if (!messages || messages.length === 0) return;
     const last = messages[messages.length - 1] as any;
