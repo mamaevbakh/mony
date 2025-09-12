@@ -1,4 +1,4 @@
-import { useCopilotAction, useCopilotReadable, useCopilotMessagesContext } from "@copilotkit/react-core";
+import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core";
 import { useEffect, useState } from "react";
 
 // Service interface based on your Bubble fields
@@ -16,9 +16,7 @@ interface Service {
 export function useLemonsAPI() {
   // Token (consider moving to env: VITE_BUBBLE_TOKEN)
   const BUBBLE_TOKEN = (import.meta as any)?.env?.VITE_BUBBLE_TOKEN || '67205b2400911e48fdfd7e7ea9cac75c';
-  // Bubble API base (allow override via env)
-  const BUBBLE_BASE: string = (import.meta as any)?.env?.VITE_BUBBLE_BASE ||
-    'https://lemonslemons.co/version-test/api/1.1/obj';
+  const BUBBLE_BASE = "https://lemonslemons.co/version-test";
 
   // Allowed categories (adjust to match Bubble field options)
   // Allowed categories as provided by Bubble (case-insensitive match in handler)
@@ -45,8 +43,32 @@ export function useLemonsAPI() {
   // Track active service (selected locally or provided by Bubble parent)
   const [activeService, setActiveService] = useState<Service | null>(null);
 
-  // Access chat messages API (for reset)
-  const { setMessages } = useCopilotMessagesContext();
+  // Fetch the latest service data by id and update state
+  const refreshServiceInfo = async (serviceId?: string) => {
+    const id = serviceId || activeService?._id;
+    if (!id) return null;
+    try {
+      const url = `${BUBBLE_BASE}/api/1.1/obj/service/${id}`;
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${BUBBLE_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!res.ok) throw new Error(`Fetch failed ${res.status}`);
+      const data = await res.json().catch(() => null as any);
+      const svc: any = data?.response ?? data ?? null;
+      if (svc && svc._id) {
+        setActiveService(svc as Service);
+        try { window.parent?.postMessage({ type: 'SERVICE_CHANGED', serviceId: id }, '*'); } catch {}
+        return svc as Service;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
 
   // Expose active service to LLM
   useCopilotReadable({
@@ -81,36 +103,6 @@ export function useLemonsAPI() {
     return () => window.removeEventListener('message', handler);
   }, []);
 
-  // ---- Helpers ----
-  async function fetchServiceById(serviceId: string): Promise<Service> {
-    const res = await fetch(`${BUBBLE_BASE}/service/${serviceId}`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${BUBBLE_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-    });
-    if (!res.ok) {
-      const t = await res.text().catch(() => '');
-      throw new Error(`Fetch failed ${res.status}: ${t}`);
-    }
-    const data = await res.json().catch(() => ({}));
-    // Bubble may return a single object under response or raw
-    const raw = data?.response ?? data;
-    // Normalize minimal shape
-    const service: Service = {
-      _id: raw?._id ?? serviceId,
-      title: raw?.title ?? '',
-      price: Number(raw?.price ?? 0),
-      delivery_days: Number(raw?.delivery_days ?? 0),
-      description: raw?.description ?? '',
-      category: raw?.category,
-      'Created Date': raw?.['Created Date'],
-      'Modified Date': raw?.['Modified Date'],
-    };
-    return service;
-  }
-
   // searchServices action
   useCopilotAction({
     name: "searchServices",
@@ -129,7 +121,7 @@ export function useLemonsAPI() {
         }
         if (maxPrice) constraints.push({ key: 'price', constraint_type: 'less than', value: maxPrice.toString() });
         if (maxDeliveryDays) constraints.push({ key: 'delivery_days', constraint_type: 'less than', value: maxDeliveryDays.toString() });
-  const baseUrl = `${BUBBLE_BASE}/service`;
+        const baseUrl = "https://lemonslemons.co/version-test/api/1.1/obj/service";
         const params = new URLSearchParams();
         if (constraints.length) params.append('constraints', JSON.stringify(constraints));
         params.append('limit', limit.toString());
@@ -172,74 +164,6 @@ export function useLemonsAPI() {
     }
   });
 
-  // resetChat: clear all chat messages and local storage; notify parent
-  useCopilotAction({
-    name: 'resetChat',
-    description: 'Reset the conversation by clearing all chat messages and local history. Use when the user asks to start over or reset the chat.',
-    parameters: [],
-    handler: async () => {
-      try {
-        // Clear persisted storage first
-        try { localStorage.removeItem('copilotkit-messages'); } catch {}
-        // Clear in-memory messages
-        setMessages([]);
-        // Notify parent iframe if applicable
-        try { window.parent?.postMessage({ type: 'CHAT_RESET' }, '*'); } catch {}
-        return { success: true };
-      } catch (e: any) {
-        return { success: false, error: e?.message || 'Unknown error', message: 'Could not reset the chat.' };
-      }
-    },
-    render: ({ status, result }) => {
-      if (status === 'executing') {
-        return (
-          <div
-            style={{
-              padding: 12,
-              background: '#F2E6D9',
-              color: '#000000',
-              border: '1px solid #E4D9CD',
-              borderRadius: 24,
-              fontSize: 14,
-              lineHeight: 1.5,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            <span aria-hidden>⏳</span>
-            <span>Resetting chat…</span>
-          </div>
-        );
-      }
-      if (status === 'complete' && result?.success) {
-        return (
-          <div
-            style={{
-              padding: 12,
-              background: '#F2E6D9',
-              color: '#000000',
-              border: '1px solid #E4D9CD',
-              borderRadius: 24,
-              fontSize: 14,
-              lineHeight: 1.5,
-            }}
-          >
-            Chat has been reset.
-          </div>
-        );
-      }
-      if (status === 'complete' && !result?.success) {
-        return (
-          <div style={{ padding: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 14, color: '#b91c1c' }}>
-            ❌ {result?.message}
-          </div>
-        );
-      }
-      return <div />;
-    },
-  });
-
   // updateServiceTitle (serviceId optional)
   useCopilotAction({
     name: 'updateServiceTitle',
@@ -254,7 +178,7 @@ export function useLemonsAPI() {
         return { success: false, message: 'No service selected. Please select a service or provide serviceId.' };
       }
       try {
-        const res = await fetch(`${BUBBLE_BASE}/service/${resolvedId}`, {
+        const res = await fetch(`https://lemonslemons.co/version-test/api/1.1/obj/service/${resolvedId}`, {
           method: 'PATCH',
           headers: { 'Authorization': `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: newTitle })
@@ -348,7 +272,7 @@ export function useLemonsAPI() {
       }
       try {
         const res = await fetch(
-          `${BUBBLE_BASE}/service/${resolvedId}`,
+          `https://lemonslemons.co/version-test/api/1.1/obj/service/${resolvedId}`,
           {
             method: 'PATCH',
             headers: {
@@ -456,7 +380,7 @@ export function useLemonsAPI() {
       }
       try {
         const res = await fetch(
-          `${BUBBLE_BASE}/service/${resolvedId}`,
+          `https://lemonslemons.co/version-test/api/1.1/obj/service/${resolvedId}`,
           {
             method: 'PATCH',
             headers: { Authorization: `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' },
@@ -539,82 +463,8 @@ export function useLemonsAPI() {
     },
   });
 
-  // getServiceById (fetch and set active service)
-  useCopilotAction({
-    name: 'getServiceById',
-    description:
-      'Fetch a service by its Bubble unique ID (_id), set it as the active service, and return it.',
-    parameters: [
-      { name: 'serviceId', type: 'string', description: 'Bubble unique ID (_id) of the service to fetch.', required: true },
-    ],
-    handler: async ({ serviceId }: { serviceId: string }) => {
-      if (!serviceId || typeof serviceId !== 'string') {
-        return { success: false, message: 'serviceId is required and must be a string.' };
-      }
-      try {
-        const service = await fetchServiceById(serviceId);
-        setActiveService(service);
-        try {
-          window.parent?.postMessage(
-            { type: 'SERVICE_LOADED', serviceId: service._id, service },
-            '*',
-          );
-        } catch {}
-        return { success: true, service };
-      } catch (e: any) {
-        return { success: false, error: e.message || 'Unknown error', message: 'Could not load the service.' };
-      }
-    },
-    render: ({ status, result }) => {
-      if (status === 'executing') {
-        return (
-          <div
-            style={{
-              padding: 12,
-              background: '#F2E6D9',
-              color: '#000000',
-              border: '1px solid #E4D9CD',
-              borderRadius: 24,
-              fontSize: 14,
-              lineHeight: 1.5,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            <span aria-hidden>⏳</span>
-            <span>Loading service…</span>
-          </div>
-        );
-      }
-      if (status === 'complete' && result?.success) {
-        const s = result.service as Service | undefined;
-        return (
-          <div
-            style={{
-              padding: 12,
-              background: '#F2E6D9',
-              color: '#000000',
-              border: '1px solid #E4D9CD',
-              borderRadius: 24,
-              fontSize: 14,
-              lineHeight: 1.5,
-            }}
-          >
-            Loaded service: <strong style={{ color: 'inherit' }}>{s?.title || s?._id}</strong>
-          </div>
-        );
-      }
-      if (status === 'complete' && !result?.success) {
-        return (
-          <div style={{ padding: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 14, color: '#b91c1c' }}>
-            ❌ {result?.message}
-          </div>
-        );
-      }
-      return <div />;
-    },
-  });
+  // Expose minimal API to callers
+  return { activeService, refreshServiceInfo };
 }
 
 // --- Presentation Components ---

@@ -3,7 +3,7 @@ import { CopilotChat } from "@copilotkit/react-ui";
 import { useCopilotMessagesContext } from "@copilotkit/react-core";
 import { ActionExecutionMessage, ResultMessage, TextMessage } from "@copilotkit/runtime-client-gql";
 import "@copilotkit/react-ui/styles.css";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useLemonsAPI } from "./hooks/useLemonsAPI";
 
 // Move the component logic inside CopilotKit provider
@@ -11,7 +11,8 @@ function ChatWithPersistence() {
   const { messages, setMessages } = useCopilotMessagesContext();
   
   // Initialize Lemons API functions
-  useLemonsAPI();
+  const { activeService, refreshServiceInfo } = useLemonsAPI() as any;
+  const lastHandledMsgId = useRef<string | null>(null);
 
   // save to local storage when messages change
   useEffect(() => {
@@ -19,6 +20,27 @@ function ChatWithPersistence() {
       localStorage.setItem("copilotkit-messages", JSON.stringify(messages));
     }
   }, [JSON.stringify(messages)]);
+
+  // On every new user message: if it contains a service id, refresh latest data
+  useEffect(() => {
+    if (!messages || messages.length === 0) return;
+    const last = messages[messages.length - 1] as any;
+    if (!last || last.id === lastHandledMsgId.current) return;
+    // Only react to human/user messages
+    if (last?.type === "TextMessage" && (last.role === "user" || last.role === "human")) {
+      const text: string = last.content || "";
+      // naive service id detection: 32-char or 24-char hex-ish bubble ids
+      const idMatch = text.match(/[a-f0-9]{24,36}/i);
+      const sid = idMatch?.[0] || activeService?._id;
+      if (sid) {
+        // fire and forget; keep chat responsive
+        refreshServiceInfo?.(sid);
+      }
+    }
+    lastHandledMsgId.current = last?.id ?? null;
+    // we rely on messages changing to re-run
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, activeService?._id]);
    
   // initially load from local storage
   useEffect(() => {
@@ -67,7 +89,6 @@ If the user asks for a better service title:
 1. Propose a concise, compelling title (<= 80 chars).
 2. If the user accepts OR clearly asks you to apply it, call updateServiceTitle with serviceId and newTitle.
 3. Do NOT restate service fields after updating; rely on the UI.
-If the user asks to start over or clear the conversation, call resetChat to wipe chat history.
 Use searchServices for discovery, updateServiceTitle only for confirmed title changes."
     />
   );
