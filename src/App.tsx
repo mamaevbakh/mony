@@ -110,12 +110,14 @@ function ChatWithPersistence() {
         title: "🍋 Lemons Service Finder",
         initial: "Hi! 👋 I can help you find service providers on Lemons. Try asking: 'Find me a web designer' or 'I need someone for digital marketing under $500'",
       }}
-      instructions="You are a helpful assistant for the Lemons platform.
+  instructions="You are a helpful assistant for the Lemons platform.
+Service ID: When we say serviceId, we mean the Bubble object unique ID (_id) for a service. It is provided either via the iframe URL parameter (?serviceId=...) or by the parent app via postMessage events (ACTIVE_SERVICE / ACTIVE_SERVICE_ID).
 If the user asks for a better service title:
 1. Propose a concise, compelling title (<= 80 chars).
 2. If the user accepts OR clearly asks you to apply it, call updateServiceTitle with serviceId and newTitle.
 3. Do NOT restate service fields after updating; rely on the UI.
 Whenever the user includes a service id in their message (or mentions the active service changed), first call getServiceById with that id to fetch the latest details and attach them to context as active_service. Then proceed with any follow-up.
+If the user asks to change the category, map their input to one of allowed_categories (case-insensitive). If it matches, call updateServiceCategory with serviceId and the matched label. If it doesn’t match, ask them to choose from allowed_categories.
 Use searchServices for discovery, updateServiceTitle only for confirmed title changes."
     />
   );

@@ -76,12 +76,13 @@ export function useLemonsAPI() {
     description: 'active_service: Currently selected service JSON. Prefer this as the source of truth after calling getServiceById.',
   });
 
-  // Read serviceId from iframe query param (?serviceId=xyz)
+  // Read serviceId from iframe query param (?serviceId=xyz) and fetch immediately
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sid = params.get('serviceId');
     if (sid) {
-      setActiveService(prev => prev?._id === sid ? prev : { _id: sid, title: '', price: 0, delivery_days: 0, description: '' });
+      // fetch the real record right away
+      refreshServiceInfo(sid);
     }
   }, []);
 
@@ -94,7 +95,8 @@ export function useLemonsAPI() {
       if (d.type === 'ACTIVE_SERVICE' && d.service?._id) {
         setActiveService(d.service);
       } else if (d.type === 'ACTIVE_SERVICE_ID' && d.id) {
-        setActiveService(prev => prev?._id === d.id ? prev : { _id: d.id, title: '', price: 0, delivery_days: 0, description: '' });
+        // fetch the real record for the provided id
+        refreshServiceInfo(d.id);
       }
     }
     window.addEventListener('message', handler);
