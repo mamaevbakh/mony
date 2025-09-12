@@ -41,7 +41,7 @@ interface LemonUser {
 export function useLemonsAPI() {
   // Token (consider moving to env: VITE_BUBBLE_TOKEN)
   const BUBBLE_TOKEN = (import.meta as any)?.env?.VITE_BUBBLE_TOKEN || '67205b2400911e48fdfd7e7ea9cac75c';
-  const BUBBLE_BASE = "https://lemonslemons.co/version-test";
+  const BUBBLE_BASE = "https://lemonslemons.co/version-live";
   // Optional overrides for package type/relationship
   const ENV_PACKAGE_TYPE_SLUG = (import.meta as any)?.env?.VITE_BUBBLE_PACKAGE_TYPE_SLUG as string | undefined;
   const ENV_SERVICE_PACKAGES_FIELD = (import.meta as any)?.env?.VITE_BUBBLE_SERVICE_PACKAGES_FIELD as string | undefined;
