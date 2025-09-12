@@ -710,21 +710,34 @@ export function useLemonsAPI() {
   useCopilotAction({
     name: 'updatePackage',
     description:
-      'Update a package in Bubble. Only updates the provided fields. Use name (not title) and delivery (text). For description use package_description.',
+      'Update a package in Bubble. Only updates allowed fields: name, package_description, price, delivery (text), revisions (text), included (list of texts). Any other input will be ignored.',
     parameters: [
       { name: 'packageId', type: 'string', description: 'Bubble unique ID (_id) of the package to update', required: true },
       { name: 'name', type: 'string', description: 'New name/title of the package', required: false },
       { name: 'package_description', type: 'string', description: 'New description text for the package', required: false },
       { name: 'price', type: 'number', description: 'New price for the package', required: false },
       { name: 'delivery', type: 'string', description: 'New delivery text for the package (e.g., 3 days)', required: false },
+      { name: 'revisions', type: 'string', description: 'Revisions policy text', required: false },
+      { name: 'included', type: 'string[]', description: 'Replace the included list with these items (list of texts)', required: false },
     ],
-    handler: async (args: { packageId: string; name?: string; package_description?: string; price?: number; delivery?: string }) => {
-      const { packageId, name, package_description, price, delivery } = args;
+    handler: async (args: { packageId: string; name?: string; package_description?: string; price?: number; delivery?: string; revisions?: string; included?: string[] } & { [k: string]: any }) => {
+      const { packageId, name, package_description, price, delivery, revisions, included } = args;
       const body: any = {};
+      // Prefer allowed fields only
       if (typeof name === 'string') body.name = name;
+      // Back-compat mapping: if caller sends title, map it to name (do NOT send title field)
+      if (!body.name && typeof args?.title === 'string') body.name = String(args.title);
       if (typeof package_description === 'string') body.package_description = package_description;
       if (typeof price === 'number') body.price = price;
       if (typeof delivery === 'string') body.delivery = delivery;
+      // Back-compat mapping: if caller sends delivery_days, convert to text
+      if (!body.delivery && (typeof args?.delivery_days === 'number' || typeof args?.delivery_days === 'string')) {
+        const dd = args.delivery_days;
+        const txt = typeof dd === 'number' ? `${dd} day${dd === 1 ? '' : 's'}` : String(dd);
+        body.delivery = txt;
+      }
+      if (typeof revisions === 'string') body.revisions = revisions;
+      if (Array.isArray(included)) body.included = included.map(String);
       if (!Object.keys(body).length) {
         return { success: false, message: 'No fields provided to update.' };
       }
