@@ -49,14 +49,14 @@ function ChatWithPersistence() {
         ]);
         // Fetch and then add ResultMessage when done
         (async () => {
-          const svc = await refreshServiceInfo(sid);
+          const res = await refreshServiceInfo(sid);
           setMessages((prev: any[]) => [
             ...prev,
             new ResultMessage({
               id: `res-${execId}`,
               actionExecutionId: execId,
               actionName: 'getServiceById',
-              result: JSON.stringify(svc ? { success: true, service: svc } : { success: false, message: 'Fetch failed' }),
+              result: JSON.stringify(res ? { success: true, service: res.service, packages: res.packages } : { success: false, message: 'Fetch failed' }),
               createdAt: new Date().toISOString(),
             }),
           ]);
@@ -116,9 +116,10 @@ If the user asks for a better service title:
 1. Propose a concise, compelling title (<= 80 chars).
 2. If the user accepts OR clearly asks you to apply it, call updateServiceTitle with serviceId and newTitle.
 3. Do NOT restate service fields after updating; rely on the UI.
-Whenever the user includes a service id in their message (or mentions the active service changed), first call getServiceById with that id to fetch the latest details and attach them to context as active_service. Then proceed with any follow-up.
-After you run any copilot action that mutates data (e.g., updateServiceTitle, updateServiceCategory, updateServiceDescription), call getServiceById again with the same serviceId to ensure the context reflects the server state for subsequent turns.
+Whenever the user includes a service id in their message (or mentions the active service changed), first call getServiceById with that id to fetch the latest details and attach them to context as active_service and active_service_packages. Then proceed with any follow-up.
+After you run any copilot action that mutates data (e.g., updateServiceTitle, updateServiceCategory, updateServiceDescription, updatePackage), call getServiceById again with the same serviceId to ensure the context reflects the server state for subsequent turns.
 If the user asks to change the category, map their input to one of allowed_categories (case-insensitive). If it matches, call updateServiceCategory with serviceId and the matched label. If it doesn’t match, ask them to choose from allowed_categories.
+Packages: Packages are separate Bubble records linked to a service; their description field is named package_description. Use listPackagesForService to read them, getPackageById to fetch one, and updatePackage to change fields (e.g., title, package_description, price, delivery_days). Avoid creating or deleting packages for now.
 Use searchServices for discovery, updateServiceTitle only for confirmed title changes."
     />
   );

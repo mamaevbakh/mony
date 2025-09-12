@@ -13,6 +13,16 @@ interface Service {
   "Modified Date"?: string;
 }
 
+// Package interface based on Bubble "package" type (assumed fields)
+interface LemonPackage {
+  _id: string;
+  title?: string;
+  price?: number;
+  delivery_days?: number;
+  package_description?: string;
+  service?: string; // reference to parent service id
+}
+
 export function useLemonsAPI() {
   // Token (consider moving to env: VITE_BUBBLE_TOKEN)
   const BUBBLE_TOKEN = (import.meta as any)?.env?.VITE_BUBBLE_TOKEN || '67205b2400911e48fdfd7e7ea9cac75c';
@@ -42,9 +52,12 @@ export function useLemonsAPI() {
 
   // Track active service (selected locally or provided by Bubble parent)
   const [activeService, setActiveService] = useState<Service | null>(null);
+  const [servicePackages, setServicePackages] = useState<LemonPackage[]>([]);
 
   // Fetch the latest service data by id and update state
-  const refreshServiceInfo = async (serviceId?: string) => {
+  const refreshServiceInfo = async (
+    serviceId?: string,
+  ): Promise<{ service: Service; packages: LemonPackage[] } | null> => {
     const id = serviceId || activeService?._id;
     if (!id) return null;
     try {
@@ -61,8 +74,29 @@ export function useLemonsAPI() {
       const svc: any = data?.response ?? data ?? null;
       if (svc && svc._id) {
         setActiveService(svc as Service);
+        // Fetch related packages for this service (assumes the field key is "service")
+        let pkgs: LemonPackage[] = [];
+        try {
+          const constraints = [{ key: 'service', constraint_type: 'equals', value: id }];
+          const p = new URLSearchParams();
+          p.append('constraints', JSON.stringify(constraints));
+          p.append('limit', '100');
+          const pkgUrl = `${BUBBLE_BASE}/api/1.1/obj/package?${p.toString()}`;
+          const pres = await fetch(pkgUrl, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${BUBBLE_TOKEN}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          if (pres.ok) {
+            const pdata = await pres.json().catch(() => null as any);
+            pkgs = (pdata?.response?.results ?? pdata?.results ?? []) as LemonPackage[];
+          }
+        } catch {}
+        setServicePackages(pkgs);
         try { window.parent?.postMessage({ type: 'SERVICE_CHANGED', serviceId: id }, '*'); } catch {}
-        return svc as Service;
+        return { service: svc as Service, packages: pkgs };
       }
       return null;
     } catch {
@@ -94,6 +128,8 @@ export function useLemonsAPI() {
       // Optionally restrict origin: if (e.origin !== 'https://your-bubble-domain') return;
       if (d.type === 'ACTIVE_SERVICE' && d.service?._id) {
         setActiveService(d.service);
+        // Also refresh packages for this active service id
+        refreshServiceInfo(d.service._id);
       } else if (d.type === 'ACTIVE_SERVICE_ID' && d.id) {
         // fetch the real record for the provided id
         refreshServiceInfo(d.id);
@@ -172,13 +208,20 @@ export function useLemonsAPI() {
       { name: 'serviceId', type: 'string', description: 'Bubble unique ID (_id) of the service to fetch', required: true },
     ],
     handler: async ({ serviceId }: { serviceId: string }) => {
-      const svc = await refreshServiceInfo(serviceId);
-      if (!svc) {
+      const res = await refreshServiceInfo(serviceId);
+      if (!res) {
         return { success: false, message: 'Could not fetch the service. Please check the id.' };
       }
-      return { success: true, service: svc };
+      return { success: true, service: res.service, packages: res.packages };
     },
     render: () => "",
+  });
+
+  // Expose active packages to the LLM for context
+  useCopilotReadable({
+    value: servicePackages && servicePackages.length ? JSON.stringify(servicePackages) : '[]',
+    description:
+      'active_service_packages: Array of packages for the currently active service. The package description field is package_description.',
   });
 
   // updateServiceTitle (serviceId optional)
@@ -486,8 +529,181 @@ export function useLemonsAPI() {
     },
   });
 
+  // listPackagesForService
+  useCopilotAction({
+    name: 'listPackagesForService',
+    description:
+      'List packages attached to a service. Use this to read the available packages. If serviceId is omitted, use active_service._id.',
+    parameters: [
+      { name: 'serviceId', type: 'string', description: 'Bubble unique ID (_id) of the parent service. If omitted, uses active_service._id.', required: false },
+      { name: 'limit', type: 'number', description: 'Max number of packages to return (default 20).', required: false },
+    ],
+    handler: async ({ serviceId, limit = 20 }: { serviceId?: string; limit?: number }) => {
+      const resolvedId = serviceId || activeService?._id;
+      if (!resolvedId) {
+        return { success: false, message: 'No service selected. Please provide serviceId or select a service.' };
+      }
+      try {
+        const constraints = [{ key: 'service', constraint_type: 'equals', value: resolvedId }];
+        const p = new URLSearchParams();
+        p.append('constraints', JSON.stringify(constraints));
+        p.append('limit', String(limit));
+        const url = `${BUBBLE_BASE}/api/1.1/obj/package?${p.toString()}`;
+        const res = await fetch(url, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' },
+        });
+        if (!res.ok) throw new Error(`Fetch failed ${res.status}`);
+        const data = await res.json();
+        const pkgs: LemonPackage[] = data?.response?.results || [];
+        // keep state in sync
+        if (activeService?._id === resolvedId) setServicePackages(pkgs);
+        return { success: true, serviceId: resolvedId, packages: pkgs };
+      } catch (e: any) {
+        return { success: false, message: e?.message || 'Could not list packages.' };
+      }
+    },
+    render: ({ status, result }) => {
+      if (status === 'executing') {
+        return (
+          <div style={{ padding: 12, background: '#F2E6D9', color: '#000000', border: '1px solid #E4D9CD', borderRadius: 24, fontSize: 14 }}>Loading packages…</div>
+        );
+      }
+      if (status === 'complete' && result?.success) {
+        const pkgs = result.packages as LemonPackage[];
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {pkgs?.length ? pkgs.map((p) => (
+              <div key={p._id} style={{ padding: 12, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <strong>{p.title || '(untitled package)'}</strong>
+                  {typeof p.price === 'number' && <span style={{ color: '#10b981' }}>${p.price}</span>}
+                </div>
+                {p.package_description && (<div style={{ color: '#6b7280', marginTop: 6 }}>{p.package_description}</div>)}
+                <div style={{ color: '#6b7280', marginTop: 6 }}>
+                  {typeof p.delivery_days === 'number' ? `${p.delivery_days} day${p.delivery_days === 1 ? '' : 's'} delivery` : ''}
+                </div>
+              </div>
+            )) : (
+              <div style={{ padding: 12, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 12 }}>No packages found.</div>
+            )}
+          </div>
+        );
+      }
+      if (status === 'complete' && !result?.success) {
+        return (
+          <div style={{ padding: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 14, color: '#b91c1c' }}>
+            ❌ {result?.message}
+          </div>
+        );
+      }
+      return <div />;
+    },
+  });
+
+  // getPackageById (silent render to avoid extra bubbles)
+  useCopilotAction({
+    name: 'getPackageById',
+    description: 'Fetch a package by its Bubble unique ID (_id).',
+    parameters: [
+      { name: 'packageId', type: 'string', description: 'Bubble unique ID (_id) of the package', required: true },
+    ],
+    handler: async ({ packageId }: { packageId: string }) => {
+      try {
+        const url = `${BUBBLE_BASE}/api/1.1/obj/package/${packageId}`;
+        const res = await fetch(url, { method: 'GET', headers: { 'Authorization': `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' } });
+        if (!res.ok) throw new Error(`Fetch failed ${res.status}`);
+        const data = await res.json();
+        const pkg: LemonPackage = data?.response ?? data;
+        if (pkg?._id) {
+          // update state if it belongs to the active service
+          setServicePackages((prev) => {
+            const idx = prev.findIndex((p) => p._id === pkg._id);
+            if (idx >= 0) {
+              const copy = prev.slice();
+              copy[idx] = { ...prev[idx], ...pkg };
+              return copy;
+            }
+            return [...prev, pkg];
+          });
+          return { success: true, package: pkg };
+        }
+        return { success: false, message: 'Package not found' };
+      } catch (e: any) {
+        return { success: false, message: e?.message || 'Could not fetch the package.' };
+      }
+    },
+    render: () => "",
+  });
+
+  // updatePackage (read/update only: update selected fields)
+  useCopilotAction({
+    name: 'updatePackage',
+    description:
+      'Update a package in Bubble. Only updates the provided fields. For description use the field package_description.',
+    parameters: [
+      { name: 'packageId', type: 'string', description: 'Bubble unique ID (_id) of the package to update', required: true },
+      { name: 'title', type: 'string', description: 'New title/name of the package', required: false },
+      { name: 'package_description', type: 'string', description: 'New description text for the package', required: false },
+      { name: 'price', type: 'number', description: 'New price for the package', required: false },
+      { name: 'delivery_days', type: 'number', description: 'New delivery days for the package', required: false },
+    ],
+    handler: async (args: { packageId: string; title?: string; package_description?: string; price?: number; delivery_days?: number }) => {
+      const { packageId, title, package_description, price, delivery_days } = args;
+      const body: any = {};
+      if (typeof title === 'string') body.title = title;
+      if (typeof package_description === 'string') body.package_description = package_description;
+      if (typeof price === 'number') body.price = price;
+      if (typeof delivery_days === 'number') body.delivery_days = delivery_days;
+      if (!Object.keys(body).length) {
+        return { success: false, message: 'No fields provided to update.' };
+      }
+      try {
+        const url = `${BUBBLE_BASE}/api/1.1/obj/package/${packageId}`;
+        const res = await fetch(url, {
+          method: 'PATCH',
+          headers: { 'Authorization': `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const t = await res.text().catch(() => '');
+          throw new Error(`Update failed ${res.status}: ${t}`);
+        }
+        const len = res.headers.get('content-length');
+        if (len && len !== '0') await res.text().catch(() => '');
+        try { window.parent?.postMessage({ type: 'PACKAGE_UPDATED', packageId }, '*'); } catch {}
+        // Refresh packages and service context after mutation
+        const sid = activeService?._id;
+        if (sid) await refreshServiceInfo(sid);
+        return { success: true, packageId, updated: body };
+      } catch (e: any) {
+        return { success: false, message: e?.message || 'Could not update the package.' };
+      }
+    },
+    render: ({ status, result }) => {
+      if (status === 'executing') {
+        return (
+          <div style={{ padding: 12, background: '#F2E6D9', color: '#000000', border: '1px solid #E4D9CD', borderRadius: 24, fontSize: 14 }}>Updating package…</div>
+        );
+      }
+      if (status === 'complete' && result?.success) {
+        return (
+          <div style={{ padding: 12, background: '#F2E6D9', color: '#000000', border: '1px solid #E4D9CD', borderRadius: 24, fontSize: 14 }}>Package updated.</div>
+        );
+      }
+      if (status === 'complete' && !result?.success) {
+        return (
+          <div style={{ padding: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 14, color: '#b91c1c' }}>
+            ❌ {result?.message}
+          </div>
+        );
+      }
+      return <div />;
+    },
+  });
+
   // Expose minimal API to callers
-  return { activeService, refreshServiceInfo };
+  return { activeService, servicePackages, refreshServiceInfo };
 }
 
 // --- Presentation Components ---
