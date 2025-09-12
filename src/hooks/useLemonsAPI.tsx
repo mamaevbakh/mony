@@ -307,7 +307,7 @@ export function useLemonsAPI() {
         }
         if (maxPrice) constraints.push({ key: 'price', constraint_type: 'less than', value: maxPrice.toString() });
         if (maxDeliveryDays) constraints.push({ key: 'delivery_days', constraint_type: 'less than', value: maxDeliveryDays.toString() });
-        const baseUrl = "https://lemonslemons.co/version-test/api/1.1/obj/service";
+        const baseUrl = "https://lemonslemons.co/version-live/api/1.1/obj/service";
         const params = new URLSearchParams();
         if (constraints.length) params.append('constraints', JSON.stringify(constraints));
         params.append('limit', limit.toString());
@@ -394,7 +394,7 @@ export function useLemonsAPI() {
         return { success: false, message: 'No service selected. Please select a service or provide serviceId.' };
       }
       try {
-        const res = await fetch(`https://lemonslemons.co/version-test/api/1.1/obj/service/${resolvedId}`, {
+        const res = await fetch(`https://lemonslemons.co/version-live/api/1.1/obj/service/${resolvedId}`, {
           method: 'PATCH',
           headers: { 'Authorization': `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: newTitle })
@@ -490,7 +490,7 @@ export function useLemonsAPI() {
       }
       try {
         const res = await fetch(
-          `https://lemonslemons.co/version-test/api/1.1/obj/service/${resolvedId}`,
+          `https://lemonslemons.co/version-live/api/1.1/obj/service/${resolvedId}`,
           {
             method: 'PATCH',
             headers: {
@@ -600,7 +600,7 @@ export function useLemonsAPI() {
       }
       try {
         const res = await fetch(
-          `https://lemonslemons.co/version-test/api/1.1/obj/service/${resolvedId}`,
+          `https://lemonslemons.co/version-live/api/1.1/obj/service/${resolvedId}`,
           {
             method: 'PATCH',
             headers: { Authorization: `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' },
