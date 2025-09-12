@@ -16,11 +16,15 @@ interface Service {
 // Package interface based on Bubble "package" type (assumed fields)
 interface LemonPackage {
   _id: string;
-  title?: string;
+  // Bubble fields per your screenshot
+  name?: string;
+  title?: string; // fallback if some records still use title
   price?: number;
-  delivery_days?: number;
+  delivery?: string; // text in Bubble
   package_description?: string;
-  service?: string; // reference to parent service id
+  revisions?: string;
+  included?: string[];
+  service?: string; // reference to parent service id (if any)
 }
 
 export function useLemonsAPI() {
@@ -57,6 +61,7 @@ export function useLemonsAPI() {
   const [activeService, setActiveService] = useState<Service | null>(null);
   const [servicePackages, setServicePackages] = useState<LemonPackage[]>([]);
   const [packageTypeSlug, setPackageTypeSlug] = useState<string | null>(ENV_PACKAGE_TYPE_SLUG?.trim() || null);
+  const DEBUG = String((import.meta as any)?.env?.VITE_DEBUG_PACKAGES || '').toLowerCase() === 'true';
 
   // Discover the correct Bubble data type slug for packages and cache it
   const resolvePackageTypeSlug = async (force = false): Promise<string | null> => {
@@ -94,8 +99,11 @@ export function useLemonsAPI() {
 
   // Extract array of package ids from a service record
   const extractPackageIdsFromService = (svc: any): string[] => {
-    const idRegex = /^[a-f0-9]{24,36}$/i;
-    const pickFromArray = (v: any): string[] => Array.isArray(v) ? v.map(String).filter((s) => idRegex.test(s)) : [];
+    // Bubble unique IDs often look like: 1707690969219x719091... (alphanumeric with an 'x'), not just hex.
+    const idRegex = /^[A-Za-z0-9_-]{10,}$/;
+    const pickFromArray = (v: any): string[] => Array.isArray(v)
+      ? v.map(String).filter((s) => idRegex.test(s))
+      : [];
     // 1) Env explicit field
     if (ENV_SERVICE_PACKAGES_FIELD && typeof svc?.[ENV_SERVICE_PACKAGES_FIELD] !== 'undefined') {
       const arr = pickFromArray(svc[ENV_SERVICE_PACKAGES_FIELD]);
@@ -110,7 +118,7 @@ export function useLemonsAPI() {
       }
     }
     // 3) Fallback: scan all arrays of id-like strings
-  for (const [, v] of Object.entries(svc || {})) {
+    for (const [, v] of Object.entries(svc || {})) {
       const arr = pickFromArray(v);
       if (arr.length >= 1) return arr;
     }
@@ -142,9 +150,13 @@ export function useLemonsAPI() {
         try {
           const pkgIds = extractPackageIdsFromService(svc);
           const slug = await resolvePackageTypeSlug();
+          if (DEBUG) {
+            console.debug('[lemons] package slug:', slug, 'pkgIds:', pkgIds);
+          }
           if (slug && pkgIds.length) {
             // limit to 100 to avoid excessive parallel requests
-            const ids = pkgIds.slice(0, 100);
+            const dedup = Array.from(new Set(pkgIds));
+            const ids = dedup.slice(0, 100);
             const results = await Promise.allSettled(
               ids.map(async (pid) => {
                 const u = `${BUBBLE_BASE}/api/1.1/obj/${slug}/${pid}`;
@@ -157,6 +169,10 @@ export function useLemonsAPI() {
             pkgs = results
               .filter((p): p is PromiseFulfilledResult<LemonPackage> => p.status === 'fulfilled' && !!p.value?._id)
               .map((p) => p.value);
+            if (DEBUG) {
+              const failures = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+              if (failures.length) console.debug('[lemons] package fetch failures:', failures.map(f => f.reason));
+            }
           }
         } catch {}
         setServicePackages(pkgs);
@@ -627,13 +643,12 @@ export function useLemonsAPI() {
             {pkgs?.length ? pkgs.map((p) => (
               <div key={p._id} style={{ padding: 12, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                  <strong>{p.title || '(untitled package)'}</strong>
+                  <strong>{p.name || p.title || '(untitled package)'}</strong>
                   {typeof p.price === 'number' && <span style={{ color: '#10b981' }}>${p.price}</span>}
                 </div>
                 {p.package_description && (<div style={{ color: '#6b7280', marginTop: 6 }}>{p.package_description}</div>)}
-                <div style={{ color: '#6b7280', marginTop: 6 }}>
-                  {typeof p.delivery_days === 'number' ? `${p.delivery_days} day${p.delivery_days === 1 ? '' : 's'} delivery` : ''}
-                </div>
+                {p.delivery && (<div style={{ color: '#6b7280', marginTop: 6 }}>Delivery: {p.delivery}</div>)}
+                {p.revisions && (<div style={{ color: '#6b7280', marginTop: 6 }}>Revisions: {p.revisions}</div>)}
               </div>
             )) : (
               <div style={{ padding: 12, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 12 }}>No packages found.</div>
@@ -695,21 +710,21 @@ export function useLemonsAPI() {
   useCopilotAction({
     name: 'updatePackage',
     description:
-      'Update a package in Bubble. Only updates the provided fields. For description use the field package_description.',
+      'Update a package in Bubble. Only updates the provided fields. Use name (not title) and delivery (text). For description use package_description.',
     parameters: [
       { name: 'packageId', type: 'string', description: 'Bubble unique ID (_id) of the package to update', required: true },
-      { name: 'title', type: 'string', description: 'New title/name of the package', required: false },
+      { name: 'name', type: 'string', description: 'New name/title of the package', required: false },
       { name: 'package_description', type: 'string', description: 'New description text for the package', required: false },
       { name: 'price', type: 'number', description: 'New price for the package', required: false },
-      { name: 'delivery_days', type: 'number', description: 'New delivery days for the package', required: false },
+      { name: 'delivery', type: 'string', description: 'New delivery text for the package (e.g., 3 days)', required: false },
     ],
-    handler: async (args: { packageId: string; title?: string; package_description?: string; price?: number; delivery_days?: number }) => {
-      const { packageId, title, package_description, price, delivery_days } = args;
+    handler: async (args: { packageId: string; name?: string; package_description?: string; price?: number; delivery?: string }) => {
+      const { packageId, name, package_description, price, delivery } = args;
       const body: any = {};
-      if (typeof title === 'string') body.title = title;
+      if (typeof name === 'string') body.name = name;
       if (typeof package_description === 'string') body.package_description = package_description;
       if (typeof price === 'number') body.price = price;
-      if (typeof delivery_days === 'number') body.delivery_days = delivery_days;
+      if (typeof delivery === 'string') body.delivery = delivery;
       if (!Object.keys(body).length) {
         return { success: false, message: 'No fields provided to update.' };
       }
