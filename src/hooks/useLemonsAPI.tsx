@@ -29,8 +29,7 @@ export function useLemonsAPI() {
   const BUBBLE_BASE = "https://lemonslemons.co/version-test";
   // Optional overrides for package type/relationship
   const ENV_PACKAGE_TYPE_SLUG = (import.meta as any)?.env?.VITE_BUBBLE_PACKAGE_TYPE_SLUG as string | undefined;
-  const ENV_PACKAGE_SERVICE_FIELD = (import.meta as any)?.env?.VITE_BUBBLE_PACKAGE_SERVICE_FIELD as string | undefined;
-  const PACKAGE_SERVICE_FIELD = (ENV_PACKAGE_SERVICE_FIELD && ENV_PACKAGE_SERVICE_FIELD.trim()) || 'service';
+  const ENV_SERVICE_PACKAGES_FIELD = (import.meta as any)?.env?.VITE_BUBBLE_SERVICE_PACKAGES_FIELD as string | undefined;
 
   // Allowed categories (adjust to match Bubble field options)
   // Allowed categories as provided by Bubble (case-insensitive match in handler)
@@ -93,6 +92,31 @@ export function useLemonsAPI() {
     return null;
   };
 
+  // Extract array of package ids from a service record
+  const extractPackageIdsFromService = (svc: any): string[] => {
+    const idRegex = /^[a-f0-9]{24,36}$/i;
+    const pickFromArray = (v: any): string[] => Array.isArray(v) ? v.map(String).filter((s) => idRegex.test(s)) : [];
+    // 1) Env explicit field
+    if (ENV_SERVICE_PACKAGES_FIELD && typeof svc?.[ENV_SERVICE_PACKAGES_FIELD] !== 'undefined') {
+      const arr = pickFromArray(svc[ENV_SERVICE_PACKAGES_FIELD]);
+      if (arr.length) return arr;
+    }
+    // 2) Common field names
+    const candidates = ['packages', 'package_ids', 'package_list', 'packages_list', 'packages_ids'];
+    for (const key of candidates) {
+      if (typeof svc?.[key] !== 'undefined') {
+        const arr = pickFromArray(svc[key]);
+        if (arr.length) return arr;
+      }
+    }
+    // 3) Fallback: scan all arrays of id-like strings
+  for (const [, v] of Object.entries(svc || {})) {
+      const arr = pickFromArray(v);
+      if (arr.length >= 1) return arr;
+    }
+    return [];
+  };
+
   // Fetch the latest service data by id and update state
   const refreshServiceInfo = async (
     serviceId?: string,
@@ -113,27 +137,26 @@ export function useLemonsAPI() {
       const svc: any = data?.response ?? data ?? null;
       if (svc && svc._id) {
         setActiveService(svc as Service);
-        // Fetch related packages for this service (assumes the field key is "service")
+        // Fetch related packages by IDs stored on the service
         let pkgs: LemonPackage[] = [];
         try {
+          const pkgIds = extractPackageIdsFromService(svc);
           const slug = await resolvePackageTypeSlug();
-          if (slug) {
-            const constraints = [{ key: PACKAGE_SERVICE_FIELD, constraint_type: 'equals', value: id }];
-            const p = new URLSearchParams();
-            p.append('constraints', JSON.stringify(constraints));
-            p.append('limit', '100');
-            const pkgUrl = `${BUBBLE_BASE}/api/1.1/obj/${slug}?${p.toString()}`;
-            const pres = await fetch(pkgUrl, {
-              method: 'GET',
-              headers: {
-                'Authorization': `Bearer ${BUBBLE_TOKEN}`,
-                'Content-Type': 'application/json',
-              },
-            });
-            if (pres.ok) {
-              const pdata = await pres.json().catch(() => null as any);
-              pkgs = (pdata?.response?.results ?? pdata?.results ?? []) as LemonPackage[];
-            }
+          if (slug && pkgIds.length) {
+            // limit to 100 to avoid excessive parallel requests
+            const ids = pkgIds.slice(0, 100);
+            const results = await Promise.allSettled(
+              ids.map(async (pid) => {
+                const u = `${BUBBLE_BASE}/api/1.1/obj/${slug}/${pid}`;
+                const r = await fetch(u, { method: 'GET', headers: { 'Authorization': `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' } });
+                if (!r.ok) throw new Error(String(r.status));
+                const j = await r.json().catch(() => null as any);
+                return (j?.response ?? j) as LemonPackage;
+              }),
+            );
+            pkgs = results
+              .filter((p): p is PromiseFulfilledResult<LemonPackage> => p.status === 'fulfilled' && !!p.value?._id)
+              .map((p) => p.value);
           }
         } catch {}
         setServicePackages(pkgs);
@@ -585,29 +608,11 @@ export function useLemonsAPI() {
       if (!resolvedId) {
         return { success: false, message: 'No service selected. Please provide serviceId or select a service.' };
       }
-      try {
-        const slug = await resolvePackageTypeSlug();
-        if (!slug) {
-          return { success: false, message: 'Packages type not found on Bubble API. Set VITE_BUBBLE_PACKAGE_TYPE_SLUG or expose the data type via Data API.' };
-        }
-        const constraints = [{ key: PACKAGE_SERVICE_FIELD, constraint_type: 'equals', value: resolvedId }];
-        const p = new URLSearchParams();
-        p.append('constraints', JSON.stringify(constraints));
-        p.append('limit', String(limit));
-        const url = `${BUBBLE_BASE}/api/1.1/obj/${slug}?${p.toString()}`;
-        const res = await fetch(url, {
-          method: 'GET',
-          headers: { 'Authorization': `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' },
-        });
-        if (!res.ok) throw new Error(`Fetch failed ${res.status}`);
-        const data = await res.json();
-        const pkgs: LemonPackage[] = data?.response?.results || [];
-        // keep state in sync
-        if (activeService?._id === resolvedId) setServicePackages(pkgs);
-        return { success: true, serviceId: resolvedId, packages: pkgs };
-      } catch (e: any) {
-        return { success: false, message: e?.message || 'Could not list packages. Ensure the data type slug and privacy rules are correct.' };
-      }
+      // Reuse refreshServiceInfo which now fetches packages by id list
+      const res = await refreshServiceInfo(resolvedId);
+      if (!res) return { success: false, message: 'Could not refresh service info.' };
+      const pkgs = res.packages?.slice(0, Math.max(0, limit)) ?? [];
+      return { success: true, serviceId: resolvedId, packages: pkgs };
     },
     render: ({ status, result }) => {
       if (status === 'executing') {
