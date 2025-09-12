@@ -1,4 +1,4 @@
-import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core";
+import { useCopilotAction, useCopilotReadable, useCopilotMessagesContext } from "@copilotkit/react-core";
 import { useEffect, useState } from "react";
 
 // Service interface based on your Bubble fields
@@ -8,6 +8,7 @@ interface Service {
   price: number;
   delivery_days: number;
   description: string;
+  category?: string;
   "Created Date"?: string;
   "Modified Date"?: string;
 }
@@ -15,9 +16,37 @@ interface Service {
 export function useLemonsAPI() {
   // Token (consider moving to env: VITE_BUBBLE_TOKEN)
   const BUBBLE_TOKEN = (import.meta as any)?.env?.VITE_BUBBLE_TOKEN || '67205b2400911e48fdfd7e7ea9cac75c';
+  // Bubble API base (allow override via env)
+  const BUBBLE_BASE: string = (import.meta as any)?.env?.VITE_BUBBLE_BASE ||
+    'https://lemonslemons.co/version-test/api/1.1/obj';
+
+  // Allowed categories (adjust to match Bubble field options)
+  // Allowed categories as provided by Bubble (case-insensitive match in handler)
+  const ALLOWED_CATEGORIES = [
+    'Branding & Identity',
+    'Web Design',
+    'Digital Marketing',
+    'Content Creation',
+    'Photography',
+    'Video Production',
+    'Writing & Copywriting',
+    'Business Consulting',
+    'Development',
+    'Other',
+  ] as const;
+
+  // Expose categories to the LLM so it knows the allowed values
+  useCopilotReadable({
+    value: JSON.stringify(ALLOWED_CATEGORIES),
+    description:
+      'allowed_categories: JSON array of valid service categories for updates. Use these exact labels (case-insensitive).',
+  });
 
   // Track active service (selected locally or provided by Bubble parent)
   const [activeService, setActiveService] = useState<Service | null>(null);
+
+  // Access chat messages API (for reset)
+  const { setMessages } = useCopilotMessagesContext();
 
   // Expose active service to LLM
   useCopilotReadable({
@@ -52,6 +81,36 @@ export function useLemonsAPI() {
     return () => window.removeEventListener('message', handler);
   }, []);
 
+  // ---- Helpers ----
+  async function fetchServiceById(serviceId: string): Promise<Service> {
+    const res = await fetch(`${BUBBLE_BASE}/service/${serviceId}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${BUBBLE_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error(`Fetch failed ${res.status}: ${t}`);
+    }
+    const data = await res.json().catch(() => ({}));
+    // Bubble may return a single object under response or raw
+    const raw = data?.response ?? data;
+    // Normalize minimal shape
+    const service: Service = {
+      _id: raw?._id ?? serviceId,
+      title: raw?.title ?? '',
+      price: Number(raw?.price ?? 0),
+      delivery_days: Number(raw?.delivery_days ?? 0),
+      description: raw?.description ?? '',
+      category: raw?.category,
+      'Created Date': raw?.['Created Date'],
+      'Modified Date': raw?.['Modified Date'],
+    };
+    return service;
+  }
+
   // searchServices action
   useCopilotAction({
     name: "searchServices",
@@ -70,7 +129,7 @@ export function useLemonsAPI() {
         }
         if (maxPrice) constraints.push({ key: 'price', constraint_type: 'less than', value: maxPrice.toString() });
         if (maxDeliveryDays) constraints.push({ key: 'delivery_days', constraint_type: 'less than', value: maxDeliveryDays.toString() });
-        const baseUrl = "https://lemonslemons.co/version-test/api/1.1/obj/service";
+  const baseUrl = `${BUBBLE_BASE}/service`;
         const params = new URLSearchParams();
         if (constraints.length) params.append('constraints', JSON.stringify(constraints));
         params.append('limit', limit.toString());
@@ -113,6 +172,74 @@ export function useLemonsAPI() {
     }
   });
 
+  // resetChat: clear all chat messages and local storage; notify parent
+  useCopilotAction({
+    name: 'resetChat',
+    description: 'Reset the conversation by clearing all chat messages and local history. Use when the user asks to start over or reset the chat.',
+    parameters: [],
+    handler: async () => {
+      try {
+        // Clear persisted storage first
+        try { localStorage.removeItem('copilotkit-messages'); } catch {}
+        // Clear in-memory messages
+        setMessages([]);
+        // Notify parent iframe if applicable
+        try { window.parent?.postMessage({ type: 'CHAT_RESET' }, '*'); } catch {}
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: e?.message || 'Unknown error', message: 'Could not reset the chat.' };
+      }
+    },
+    render: ({ status, result }) => {
+      if (status === 'executing') {
+        return (
+          <div
+            style={{
+              padding: 12,
+              background: '#F2E6D9',
+              color: '#000000',
+              border: '1px solid #E4D9CD',
+              borderRadius: 24,
+              fontSize: 14,
+              lineHeight: 1.5,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <span aria-hidden>⏳</span>
+            <span>Resetting chat…</span>
+          </div>
+        );
+      }
+      if (status === 'complete' && result?.success) {
+        return (
+          <div
+            style={{
+              padding: 12,
+              background: '#F2E6D9',
+              color: '#000000',
+              border: '1px solid #E4D9CD',
+              borderRadius: 24,
+              fontSize: 14,
+              lineHeight: 1.5,
+            }}
+          >
+            Chat has been reset.
+          </div>
+        );
+      }
+      if (status === 'complete' && !result?.success) {
+        return (
+          <div style={{ padding: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 14, color: '#b91c1c' }}>
+            ❌ {result?.message}
+          </div>
+        );
+      }
+      return <div />;
+    },
+  });
+
   // updateServiceTitle (serviceId optional)
   useCopilotAction({
     name: 'updateServiceTitle',
@@ -127,7 +254,7 @@ export function useLemonsAPI() {
         return { success: false, message: 'No service selected. Please select a service or provide serviceId.' };
       }
       try {
-        const res = await fetch(`https://lemonslemons.co/version-test/api/1.1/obj/service/${resolvedId}`, {
+        const res = await fetch(`${BUBBLE_BASE}/service/${resolvedId}`, {
           method: 'PATCH',
           headers: { 'Authorization': `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: newTitle })
@@ -180,7 +307,7 @@ export function useLemonsAPI() {
               lineHeight: 1.5,
             }}
           >
-            ✅ Service title set to: <strong style={{ color: 'inherit' }}>{result.newTitle}</strong>
+            Title set to: <strong style={{ color: 'inherit' }}>{result.newTitle}</strong>
           </div>
         );
       }
@@ -193,6 +320,300 @@ export function useLemonsAPI() {
       }
       return <div />;
     }
+  });
+
+  // updateServiceCategory (serviceId optional)
+  useCopilotAction({
+    name: 'updateServiceCategory',
+    description:
+      'Update the category of an existing service in Bubble. The newCategory must be one of the allowed categories.',
+    parameters: [
+      { name: 'serviceId', type: 'string', description: 'Bubble unique ID (_id) of the service to update. If omitted, use active_service._id.', required: false },
+      { name: 'newCategory', type: 'string', description: `New category (one of: ${ALLOWED_CATEGORIES.join(', ')}). Case-insensitive.`, required: true },
+    ],
+    handler: async ({ serviceId, newCategory }: { serviceId?: string; newCategory: string }) => {
+      const resolvedId = serviceId || activeService?._id;
+      if (!resolvedId) {
+        return { success: false, message: 'No service selected. Please select a service or provide serviceId.' };
+      }
+      // Validate category strictly (case-insensitive match to be user-friendly)
+      const match = ALLOWED_CATEGORIES.find(
+        (c) => c.toLowerCase() === String(newCategory).trim().toLowerCase(),
+      );
+      if (!match) {
+        return {
+          success: false,
+          message: `Category must be one of: ${ALLOWED_CATEGORIES.join(', ')}`,
+        };
+      }
+      try {
+        const res = await fetch(
+          `${BUBBLE_BASE}/service/${resolvedId}`,
+          {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${BUBBLE_TOKEN}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ category: match }),
+          },
+        );
+        if (!res.ok) {
+          const t = await res.text().catch(() => '');
+          throw new Error(`Update failed ${res.status}: ${t}`);
+        }
+        const len = res.headers.get('content-length');
+        if (len && len !== '0') {
+          await res.text().catch(() => '');
+        }
+        try {
+          window.parent?.postMessage(
+            { type: 'SERVICE_CATEGORY_UPDATED', serviceId: resolvedId, category: match },
+            '*',
+          );
+        } catch {}
+        setActiveService((prev) => (prev && prev._id === resolvedId ? { ...prev, category: match } : prev));
+        return { success: true, serviceId: resolvedId, newCategory: match };
+      } catch (e: any) {
+        return {
+          success: false,
+          error: e.message || 'Unknown error',
+          message: 'Could not update the service category.',
+        };
+      }
+    },
+    render: ({ status, result }) => {
+      if (status === 'executing') {
+        return (
+          <div
+            style={{
+              padding: 12,
+              background: '#F2E6D9',
+              color: '#000000',
+              border: '1px solid #E4D9CD',
+              borderRadius: 24,
+              fontSize: 14,
+              lineHeight: 1.5,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <span aria-hidden>⏳</span>
+            <span>Updating category…</span>
+          </div>
+        );
+      }
+      if (status === 'complete' && result?.success) {
+        return (
+          <div
+            style={{
+              padding: 12,
+              background: '#F2E6D9',
+              color: '#000000',
+              border: '1px solid #E4D9CD',
+              borderRadius: 24,
+              fontSize: 14,
+              lineHeight: 1.5,
+            }}
+          >
+            Category set to: <strong style={{ color: 'inherit' }}>{result.newCategory}</strong>
+          </div>
+        );
+      }
+      if (status === 'complete' && !result?.success) {
+        return (
+          <div
+            style={{
+              padding: 12,
+              background: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: 8,
+              fontSize: 14,
+              color: '#b91c1c',
+            }}
+          >
+            ❌ {result?.message}
+          </div>
+        );
+      }
+      return <div />;
+    },
+  });
+
+  // updateServiceDescription (serviceId optional)
+  useCopilotAction({
+    name: 'updateServiceDescription',
+    description: 'Update the description of an existing service in Bubble.',
+    parameters: [
+      { name: 'serviceId', type: 'string', description: 'Bubble unique ID (_id) of the service to update. If omitted, use active_service._id.', required: false },
+      { name: 'newDescription', type: 'string', description: 'The new finalized description to set on the service', required: true },
+    ],
+    handler: async ({ serviceId, newDescription }: { serviceId?: string; newDescription: string }) => {
+      const resolvedId = serviceId || activeService?._id;
+      if (!resolvedId) {
+        return { success: false, message: 'No service selected. Please select a service or provide serviceId.' };
+      }
+      try {
+        const res = await fetch(
+          `${BUBBLE_BASE}/service/${resolvedId}`,
+          {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ description: newDescription }),
+          },
+        );
+        if (!res.ok) {
+          const t = await res.text().catch(() => '');
+          throw new Error(`Update failed ${res.status}: ${t}`);
+        }
+        const len = res.headers.get('content-length');
+        if (len && len !== '0') {
+          await res.text().catch(() => '');
+        }
+        try {
+          window.parent?.postMessage(
+            { type: 'SERVICE_DESCRIPTION_UPDATED', serviceId: resolvedId },
+            '*',
+          );
+        } catch {}
+        setActiveService((prev) =>
+          prev && prev._id === resolvedId ? { ...prev, description: newDescription } : prev,
+        );
+        return { success: true, serviceId: resolvedId };
+      } catch (e: any) {
+        return {
+          success: false,
+          error: e.message || 'Unknown error',
+          message: 'Could not update the service description.',
+        };
+      }
+    },
+    render: ({ status, result }) => {
+      if (status === 'executing') {
+        return (
+          <div
+            style={{
+              padding: 12,
+              background: '#F2E6D9',
+              color: '#000000',
+              border: '1px solid #E4D9CD',
+              borderRadius: 24,
+              fontSize: 14,
+              lineHeight: 1.5,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <span aria-hidden>⏳</span>
+            <span>Updating description…</span>
+          </div>
+        );
+      }
+      if (status === 'complete' && result?.success) {
+        return (
+          <div
+            style={{
+              padding: 12,
+              background: '#F2E6D9',
+              color: '#000000',
+              border: '1px solid #E4D9CD',
+              borderRadius: 24,
+              fontSize: 14,
+              lineHeight: 1.5,
+            }}
+          >
+            Description updated successfully.
+          </div>
+        );
+      }
+      if (status === 'complete' && !result?.success) {
+        return (
+          <div style={{ padding: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 14, color: '#b91c1c' }}>
+            ❌ {result?.message}
+          </div>
+        );
+      }
+      return <div />;
+    },
+  });
+
+  // getServiceById (fetch and set active service)
+  useCopilotAction({
+    name: 'getServiceById',
+    description:
+      'Fetch a service by its Bubble unique ID (_id), set it as the active service, and return it.',
+    parameters: [
+      { name: 'serviceId', type: 'string', description: 'Bubble unique ID (_id) of the service to fetch.', required: true },
+    ],
+    handler: async ({ serviceId }: { serviceId: string }) => {
+      if (!serviceId || typeof serviceId !== 'string') {
+        return { success: false, message: 'serviceId is required and must be a string.' };
+      }
+      try {
+        const service = await fetchServiceById(serviceId);
+        setActiveService(service);
+        try {
+          window.parent?.postMessage(
+            { type: 'SERVICE_LOADED', serviceId: service._id, service },
+            '*',
+          );
+        } catch {}
+        return { success: true, service };
+      } catch (e: any) {
+        return { success: false, error: e.message || 'Unknown error', message: 'Could not load the service.' };
+      }
+    },
+    render: ({ status, result }) => {
+      if (status === 'executing') {
+        return (
+          <div
+            style={{
+              padding: 12,
+              background: '#F2E6D9',
+              color: '#000000',
+              border: '1px solid #E4D9CD',
+              borderRadius: 24,
+              fontSize: 14,
+              lineHeight: 1.5,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <span aria-hidden>⏳</span>
+            <span>Loading service…</span>
+          </div>
+        );
+      }
+      if (status === 'complete' && result?.success) {
+        const s = result.service as Service | undefined;
+        return (
+          <div
+            style={{
+              padding: 12,
+              background: '#F2E6D9',
+              color: '#000000',
+              border: '1px solid #E4D9CD',
+              borderRadius: 24,
+              fontSize: 14,
+              lineHeight: 1.5,
+            }}
+          >
+            Loaded service: <strong style={{ color: 'inherit' }}>{s?.title || s?._id}</strong>
+          </div>
+        );
+      }
+      if (status === 'complete' && !result?.success) {
+        return (
+          <div style={{ padding: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 14, color: '#b91c1c' }}>
+            ❌ {result?.message}
+          </div>
+        );
+      }
+      return <div />;
+    },
   });
 }
 

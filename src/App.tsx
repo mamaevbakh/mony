@@ -67,6 +67,7 @@ If the user asks for a better service title:
 1. Propose a concise, compelling title (<= 80 chars).
 2. If the user accepts OR clearly asks you to apply it, call updateServiceTitle with serviceId and newTitle.
 3. Do NOT restate service fields after updating; rely on the UI.
+If the user asks to start over or clear the conversation, call resetChat to wipe chat history.
 Use searchServices for discovery, updateServiceTitle only for confirmed title changes."
     />
   );
