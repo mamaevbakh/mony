@@ -21,7 +21,7 @@ function ChatWithPersistence() {
     }
   }, [JSON.stringify(messages)]);
 
-  // On every new user message: if it contains a service id, refresh latest data
+  // On every new user message: if it contains a service id, attach a tool-style context (ActionExecution/Result)
   useEffect(() => {
     if (!messages || messages.length === 0) return;
     const last = messages[messages.length - 1] as any;
@@ -32,9 +32,35 @@ function ChatWithPersistence() {
       // naive service id detection: 32-char or 24-char hex-ish bubble ids
       const idMatch = text.match(/[a-f0-9]{24,36}/i);
       const sid = idMatch?.[0] || activeService?._id;
-      if (sid) {
-        // fire and forget; keep chat responsive
-        refreshServiceInfo?.(sid);
+      if (sid && refreshServiceInfo) {
+        // Inject an action execution + result so context is explicitly attached in this turn
+        const execId = `exec-getServiceById-${Date.now()}`;
+        const now = new Date().toISOString();
+        // Add ActionExecutionMessage immediately
+        setMessages((prev: any[]) => [
+          ...prev,
+          new ActionExecutionMessage({
+            id: execId,
+            name: 'getServiceById',
+            scope: 'default',
+            arguments: { serviceId: sid },
+            createdAt: now,
+          }),
+        ]);
+        // Fetch and then add ResultMessage when done
+        (async () => {
+          const svc = await refreshServiceInfo(sid);
+          setMessages((prev: any[]) => [
+            ...prev,
+            new ResultMessage({
+              id: `res-${execId}`,
+              actionExecutionId: execId,
+              actionName: 'getServiceById',
+              result: JSON.stringify(svc ? { success: true, service: svc } : { success: false, message: 'Fetch failed' }),
+              createdAt: new Date().toISOString(),
+            }),
+          ]);
+        })();
       }
     }
     lastHandledMsgId.current = last?.id ?? null;
