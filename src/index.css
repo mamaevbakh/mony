@@ -97,3 +97,39 @@ body,
     background-color: #f9f9f9;
   }
 }
+
+/* Hide message action buttons until the message is hovered */
+/* CopilotKit's CSS class names vary slightly by version; we target multiple likely selectors safely. */
+/* Assistant messages */
+.copilotKitAssistantMessage .copilotKitMessageActions,
+.copilotKitAssistantMessage .copilotKitActions,
+.copilotkit-assistant-message .copilotkit-message-actions,
+.copilotkit-message.copilotkit-assistant .copilotkit-message-actions {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease, visibility 120ms ease;
+}
+.copilotKitAssistantMessage:hover .copilotKitMessageActions,
+.copilotKitAssistantMessage:hover .copilotKitActions,
+.copilotkit-assistant-message:hover .copilotkit-message-actions,
+.copilotkit-message.copilotkit-assistant:hover .copilotkit-message-actions {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* User messages */
+.copilotKitUserMessage .copilotKitMessageActions,
+.copilotKitUserMessage .copilotKitActions,
+.copilotkit-user-message .copilotkit-message-actions,
+.copilotkit-message.copilotkit-user .copilotkit-message-actions {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease, visibility 120ms ease;
+}
+.copilotKitUserMessage:hover .copilotKitMessageActions,
+.copilotKitUserMessage:hover .copilotKitActions,
+.copilotkit-user-message:hover .copilotkit-message-actions,
+.copilotkit-message.copilotkit-user:hover .copilotkit-message-actions {
+  opacity: 1;
+  visibility: visible;
+}
