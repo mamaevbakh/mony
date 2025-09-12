@@ -27,6 +27,17 @@ interface LemonPackage {
   service?: string; // reference to parent service id (if any)
 }
 
+// User interface (safe fields only)
+interface LemonUser {
+  _id: string;
+  firstName?: string;
+  lastName?: string;
+  bio?: string;
+  experience?: string;
+  tagline?: string;
+  skills?: string[];
+}
+
 export function useLemonsAPI() {
   // Token (consider moving to env: VITE_BUBBLE_TOKEN)
   const BUBBLE_TOKEN = (import.meta as any)?.env?.VITE_BUBBLE_TOKEN || '67205b2400911e48fdfd7e7ea9cac75c';
@@ -62,6 +73,7 @@ export function useLemonsAPI() {
   const [servicePackages, setServicePackages] = useState<LemonPackage[]>([]);
   const [packageTypeSlug, setPackageTypeSlug] = useState<string | null>(ENV_PACKAGE_TYPE_SLUG?.trim() || null);
   const DEBUG = String((import.meta as any)?.env?.VITE_DEBUG_PACKAGES || '').toLowerCase() === 'true';
+  const [activeUser, setActiveUser] = useState<LemonUser | null>(null);
 
   // Discover the correct Bubble data type slug for packages and cache it
   const resolvePackageTypeSlug = async (force = false): Promise<string | null> => {
@@ -95,6 +107,54 @@ export function useLemonsAPI() {
     // Not found
     setPackageTypeSlug(null);
     return null;
+  };
+
+  // Discover the correct Bubble data type slug for user and cache it
+  const resolveUserTypeSlug = async (force = false): Promise<string | null> => {
+    const cacheKey = 'lemons_user_slug';
+    const cached = !force ? localStorage.getItem(cacheKey) : null;
+    if (cached) return cached;
+    const candidates = ['user', 'User'];
+    for (const slug of candidates) {
+      try {
+        const url = `${BUBBLE_BASE}/api/1.1/obj/${slug}?limit=1`;
+        const res = await fetch(url, { method: 'GET', headers: { 'Authorization': `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' } });
+        if (res.ok) {
+          localStorage.setItem(cacheKey, slug);
+          return slug;
+        }
+      } catch {}
+    }
+    return null;
+  };
+
+  // Refresh a user by id (safe fields only)
+  const refreshUserInfo = async (userId: string): Promise<LemonUser | null> => {
+    const slug = await resolveUserTypeSlug();
+    if (!slug) return null;
+    try {
+      const url = `${BUBBLE_BASE}/api/1.1/obj/${slug}/${userId}`;
+      const res = await fetch(url, { method: 'GET', headers: { 'Authorization': `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' } });
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => null as any);
+      const u: any = data?.response ?? data ?? null;
+      if (!u?._id) return null;
+      // Filter to safe fields only
+      const safe: LemonUser = {
+        _id: u._id,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        bio: u.bio,
+        experience: u.experience,
+        tagline: u.tagline,
+        skills: Array.isArray(u.skills) ? u.skills.map(String) : undefined,
+      };
+      setActiveUser(safe);
+      try { window.parent?.postMessage({ type: 'USER_CHANGED', userId }, '*'); } catch {}
+      return safe;
+    } catch {
+      return null;
+    }
   };
 
   // Extract array of package ids from a service record
@@ -303,6 +363,12 @@ export function useLemonsAPI() {
     value: servicePackages && servicePackages.length ? JSON.stringify(servicePackages) : '[]',
     description:
       'active_service_packages: Array of packages for the currently active service. The package description field is package_description.',
+  });
+
+  // Expose active user (safe fields only)
+  useCopilotReadable({
+    value: activeUser ? JSON.stringify(activeUser) : 'null',
+    description: 'active_user: Current user profile with safe fields (firstName, lastName, bio, experience, tagline, skills).',
   });
 
   // updateServiceTitle (serviceId optional)
@@ -674,6 +740,83 @@ export function useLemonsAPI() {
     },
   });
 
+  // getUserById (silent)
+  useCopilotAction({
+    name: 'getUserById',
+    description: 'Fetch a user profile by unique id (safe fields only).',
+    parameters: [
+      { name: 'userId', type: 'string', description: 'Bubble unique ID (_id) of the user', required: true },
+    ],
+    handler: async ({ userId }: { userId: string }) => {
+      const u = await refreshUserInfo(userId);
+      if (!u) return { success: false, message: 'Could not fetch the user.' };
+      return { success: true, user: u };
+    },
+    render: () => "",
+  });
+
+  // updateUser (safe fields only)
+  useCopilotAction({
+    name: 'updateUser',
+    description: 'Update safe user fields only: firstName, lastName, bio, experience, tagline, skills. Do not include admin, email, photo, threads.',
+    parameters: [
+      { name: 'userId', type: 'string', description: 'Bubble unique ID (_id) of the user. If omitted, uses active_user._id.', required: false },
+      { name: 'firstName', type: 'string', description: 'First name', required: false },
+      { name: 'lastName', type: 'string', description: 'Last name', required: false },
+      { name: 'bio', type: 'string', description: 'Professional bio', required: false },
+      { name: 'experience', type: 'string', description: 'Years/summary of experience', required: false },
+      { name: 'tagline', type: 'string', description: 'Professional tagline', required: false },
+      { name: 'skills', type: 'string', description: 'Replace skills list; comma- or newline-separated string (e.g., "Web, UX").', required: false },
+    ],
+    handler: async (args: { userId?: string; firstName?: string; lastName?: string; bio?: string; experience?: string; tagline?: string; skills?: string | string[] }) => {
+      const resolvedId = args.userId || activeUser?._id;
+      if (!resolvedId) return { success: false, message: 'No user selected. Provide userId or select one.' };
+      const body: any = {};
+      const pickStr = (v: any) => (typeof v === 'string' ? v : undefined);
+      if (pickStr(args.firstName)) body.firstName = String(args.firstName);
+      if (pickStr(args.lastName)) body.lastName = String(args.lastName);
+      if (pickStr(args.bio)) body.bio = String(args.bio);
+      if (pickStr(args.experience)) body.experience = String(args.experience);
+      if (pickStr(args.tagline)) body.tagline = String(args.tagline);
+      const rawSkills = args.skills as any;
+      if (Array.isArray(rawSkills)) {
+        body.skills = rawSkills.map((s) => String(s).trim()).filter(Boolean);
+      } else if (typeof rawSkills === 'string') {
+        body.skills = rawSkills.split(/\r?\n|,/).map((s) => s.trim()).filter(Boolean);
+      }
+      if (!Object.keys(body).length) return { success: false, message: 'No fields provided to update.' };
+      try {
+        const slug = await resolveUserTypeSlug();
+        if (!slug) return { success: false, message: 'User type not exposed via Data API.' };
+        const url = `${BUBBLE_BASE}/api/1.1/obj/${slug}/${resolvedId}`;
+        const res = await fetch(url, { method: 'PATCH', headers: { 'Authorization': `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (!res.ok) {
+          const t = await res.text().catch(() => '');
+          throw new Error(`Update failed ${res.status}: ${t}`);
+        }
+        const len = res.headers.get('content-length');
+        if (len && len !== '0') await res.text().catch(() => '');
+        try { window.parent?.postMessage({ type: 'USER_UPDATED', userId: resolvedId }, '*'); } catch {}
+        await refreshUserInfo(resolvedId);
+        return { success: true, userId: resolvedId, updated: body };
+      } catch (e: any) {
+        return { success: false, message: e?.message || 'Could not update the user.' };
+      }
+    },
+    render: ({ status, result }) => {
+      if (status === 'executing') {
+        return <div style={{ padding: 12, background: '#F2E6D9', color: '#000', border: '1px solid #E4D9CD', borderRadius: 24, fontSize: 14 }}>Updating user…</div>;
+      }
+      if (status === 'complete' && result?.success) {
+        return <div style={{ padding: 12, background: '#F2E6D9', color: '#000', border: '1px solid #E4D9CD', borderRadius: 24, fontSize: 14 }}>User updated.</div>;
+      }
+      if (status === 'complete' && !result?.success) {
+        return <div style={{ padding: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 14, color: '#b91c1c' }}>❌ {result?.message}</div>;
+      }
+      return <div />;
+    },
+  });
+
   // getPackageById (silent render to avoid extra bubbles)
   useCopilotAction({
     name: 'getPackageById',
@@ -809,7 +952,7 @@ export function useLemonsAPI() {
   });
 
   // Expose minimal API to callers
-  return { activeService, servicePackages, refreshServiceInfo };
+  return { activeService, servicePackages, refreshServiceInfo, activeUser, refreshUserInfo };
 }
 
 // --- Presentation Components ---
