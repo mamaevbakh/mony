@@ -27,6 +27,10 @@ export function useLemonsAPI() {
   // Token (consider moving to env: VITE_BUBBLE_TOKEN)
   const BUBBLE_TOKEN = (import.meta as any)?.env?.VITE_BUBBLE_TOKEN || '67205b2400911e48fdfd7e7ea9cac75c';
   const BUBBLE_BASE = "https://lemonslemons.co/version-test";
+  // Optional overrides for package type/relationship
+  const ENV_PACKAGE_TYPE_SLUG = (import.meta as any)?.env?.VITE_BUBBLE_PACKAGE_TYPE_SLUG as string | undefined;
+  const ENV_PACKAGE_SERVICE_FIELD = (import.meta as any)?.env?.VITE_BUBBLE_PACKAGE_SERVICE_FIELD as string | undefined;
+  const PACKAGE_SERVICE_FIELD = (ENV_PACKAGE_SERVICE_FIELD && ENV_PACKAGE_SERVICE_FIELD.trim()) || 'service';
 
   // Allowed categories (adjust to match Bubble field options)
   // Allowed categories as provided by Bubble (case-insensitive match in handler)
@@ -53,6 +57,41 @@ export function useLemonsAPI() {
   // Track active service (selected locally or provided by Bubble parent)
   const [activeService, setActiveService] = useState<Service | null>(null);
   const [servicePackages, setServicePackages] = useState<LemonPackage[]>([]);
+  const [packageTypeSlug, setPackageTypeSlug] = useState<string | null>(ENV_PACKAGE_TYPE_SLUG?.trim() || null);
+
+  // Discover the correct Bubble data type slug for packages and cache it
+  const resolvePackageTypeSlug = async (force = false): Promise<string | null> => {
+    if (!force && packageTypeSlug) return packageTypeSlug;
+    if (!force && !ENV_PACKAGE_TYPE_SLUG) {
+      const cached = localStorage.getItem('lemons_package_slug');
+      if (cached) {
+        setPackageTypeSlug(cached);
+        return cached;
+      }
+    }
+    // If explicitly provided via env, trust it
+    if (ENV_PACKAGE_TYPE_SLUG && ENV_PACKAGE_TYPE_SLUG.trim()) {
+      setPackageTypeSlug(ENV_PACKAGE_TYPE_SLUG.trim());
+      localStorage.setItem('lemons_package_slug', ENV_PACKAGE_TYPE_SLUG.trim());
+      return ENV_PACKAGE_TYPE_SLUG.trim();
+    }
+    // Probe common candidates
+    const candidates = ['package', 'packages', 'service_package', 'service-packages', 'Package'];
+    for (const slug of candidates) {
+      try {
+        const url = `${BUBBLE_BASE}/api/1.1/obj/${slug}?limit=1`;
+        const res = await fetch(url, { method: 'GET', headers: { 'Authorization': `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' } });
+        if (res.ok) {
+          setPackageTypeSlug(slug);
+          localStorage.setItem('lemons_package_slug', slug);
+          return slug;
+        }
+      } catch {}
+    }
+    // Not found
+    setPackageTypeSlug(null);
+    return null;
+  };
 
   // Fetch the latest service data by id and update state
   const refreshServiceInfo = async (
@@ -77,21 +116,24 @@ export function useLemonsAPI() {
         // Fetch related packages for this service (assumes the field key is "service")
         let pkgs: LemonPackage[] = [];
         try {
-          const constraints = [{ key: 'service', constraint_type: 'equals', value: id }];
-          const p = new URLSearchParams();
-          p.append('constraints', JSON.stringify(constraints));
-          p.append('limit', '100');
-          const pkgUrl = `${BUBBLE_BASE}/api/1.1/obj/package?${p.toString()}`;
-          const pres = await fetch(pkgUrl, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${BUBBLE_TOKEN}`,
-              'Content-Type': 'application/json',
-            },
-          });
-          if (pres.ok) {
-            const pdata = await pres.json().catch(() => null as any);
-            pkgs = (pdata?.response?.results ?? pdata?.results ?? []) as LemonPackage[];
+          const slug = await resolvePackageTypeSlug();
+          if (slug) {
+            const constraints = [{ key: PACKAGE_SERVICE_FIELD, constraint_type: 'equals', value: id }];
+            const p = new URLSearchParams();
+            p.append('constraints', JSON.stringify(constraints));
+            p.append('limit', '100');
+            const pkgUrl = `${BUBBLE_BASE}/api/1.1/obj/${slug}?${p.toString()}`;
+            const pres = await fetch(pkgUrl, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${BUBBLE_TOKEN}`,
+                'Content-Type': 'application/json',
+              },
+            });
+            if (pres.ok) {
+              const pdata = await pres.json().catch(() => null as any);
+              pkgs = (pdata?.response?.results ?? pdata?.results ?? []) as LemonPackage[];
+            }
           }
         } catch {}
         setServicePackages(pkgs);
@@ -544,11 +586,15 @@ export function useLemonsAPI() {
         return { success: false, message: 'No service selected. Please provide serviceId or select a service.' };
       }
       try {
-        const constraints = [{ key: 'service', constraint_type: 'equals', value: resolvedId }];
+        const slug = await resolvePackageTypeSlug();
+        if (!slug) {
+          return { success: false, message: 'Packages type not found on Bubble API. Set VITE_BUBBLE_PACKAGE_TYPE_SLUG or expose the data type via Data API.' };
+        }
+        const constraints = [{ key: PACKAGE_SERVICE_FIELD, constraint_type: 'equals', value: resolvedId }];
         const p = new URLSearchParams();
         p.append('constraints', JSON.stringify(constraints));
         p.append('limit', String(limit));
-        const url = `${BUBBLE_BASE}/api/1.1/obj/package?${p.toString()}`;
+        const url = `${BUBBLE_BASE}/api/1.1/obj/${slug}?${p.toString()}`;
         const res = await fetch(url, {
           method: 'GET',
           headers: { 'Authorization': `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' },
@@ -560,7 +606,7 @@ export function useLemonsAPI() {
         if (activeService?._id === resolvedId) setServicePackages(pkgs);
         return { success: true, serviceId: resolvedId, packages: pkgs };
       } catch (e: any) {
-        return { success: false, message: e?.message || 'Could not list packages.' };
+        return { success: false, message: e?.message || 'Could not list packages. Ensure the data type slug and privacy rules are correct.' };
       }
     },
     render: ({ status, result }) => {
@@ -610,7 +656,11 @@ export function useLemonsAPI() {
     ],
     handler: async ({ packageId }: { packageId: string }) => {
       try {
-        const url = `${BUBBLE_BASE}/api/1.1/obj/package/${packageId}`;
+        const slug = await resolvePackageTypeSlug();
+        if (!slug) {
+          return { success: false, message: 'Packages type not found on Bubble API. Set VITE_BUBBLE_PACKAGE_TYPE_SLUG or expose the data type via Data API.' };
+        }
+        const url = `${BUBBLE_BASE}/api/1.1/obj/${slug}/${packageId}`;
         const res = await fetch(url, { method: 'GET', headers: { 'Authorization': `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' } });
         if (!res.ok) throw new Error(`Fetch failed ${res.status}`);
         const data = await res.json();
@@ -659,7 +709,11 @@ export function useLemonsAPI() {
         return { success: false, message: 'No fields provided to update.' };
       }
       try {
-        const url = `${BUBBLE_BASE}/api/1.1/obj/package/${packageId}`;
+        const slug = await resolvePackageTypeSlug();
+        if (!slug) {
+          return { success: false, message: 'Packages type not found on Bubble API. Set VITE_BUBBLE_PACKAGE_TYPE_SLUG or expose the data type via Data API.' };
+        }
+        const url = `${BUBBLE_BASE}/api/1.1/obj/${slug}/${packageId}`;
         const res = await fetch(url, {
           method: 'PATCH',
           headers: { 'Authorization': `Bearer ${BUBBLE_TOKEN}`, 'Content-Type': 'application/json' },
