@@ -255,9 +255,13 @@ export function useLemonsAPI() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sid = params.get('serviceId');
+    const uid = params.get('userId');
     if (sid) {
       // fetch the real record right away
       refreshServiceInfo(sid);
+    }
+    if (uid) {
+      refreshUserInfo(uid);
     }
   }, []);
 
@@ -274,6 +278,11 @@ export function useLemonsAPI() {
       } else if (d.type === 'ACTIVE_SERVICE_ID' && d.id) {
         // fetch the real record for the provided id
         refreshServiceInfo(d.id);
+      } else if (d.type === 'ACTIVE_USER' && (d.user?._id || d.userId)) {
+        const id = d.user?._id || d.userId;
+        if (id) refreshUserInfo(id);
+      } else if (d.type === 'ACTIVE_USER_ID' && d.id) {
+        refreshUserInfo(d.id);
       }
     }
     window.addEventListener('message', handler);
