@@ -208,6 +208,8 @@ export function useLemonsAPI() {
         if (len && len !== '0') { await res.text().catch(() => ''); }
         try { window.parent?.postMessage({ type: 'SERVICE_UPDATED', serviceId: resolvedId, title: newTitle }, '*'); } catch {}
         setActiveService(prev => prev && prev._id === resolvedId ? { ...prev, title: newTitle } : prev);
+        // Ensure fresh server state after mutation
+        await refreshServiceInfo(resolvedId);
         return { success: true, serviceId: resolvedId, newTitle, message: `Title updated to "${newTitle}".` };
       } catch (e: any) {
         return { success: false, error: e.message || 'Unknown error', message: 'Could not update the service title.' };
@@ -314,6 +316,8 @@ export function useLemonsAPI() {
           );
         } catch {}
         setActiveService((prev) => (prev && prev._id === resolvedId ? { ...prev, category: match } : prev));
+        // Ensure fresh server state after mutation
+        await refreshServiceInfo(resolvedId);
         return { success: true, serviceId: resolvedId, newCategory: match };
       } catch (e: any) {
         return {
@@ -421,6 +425,8 @@ export function useLemonsAPI() {
         setActiveService((prev) =>
           prev && prev._id === resolvedId ? { ...prev, description: newDescription } : prev,
         );
+        // Ensure fresh server state after mutation
+        await refreshServiceInfo(resolvedId);
         return { success: true, serviceId: resolvedId };
       } catch (e: any) {
         return {

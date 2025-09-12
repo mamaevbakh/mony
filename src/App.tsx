@@ -117,6 +117,7 @@ If the user asks for a better service title:
 2. If the user accepts OR clearly asks you to apply it, call updateServiceTitle with serviceId and newTitle.
 3. Do NOT restate service fields after updating; rely on the UI.
 Whenever the user includes a service id in their message (or mentions the active service changed), first call getServiceById with that id to fetch the latest details and attach them to context as active_service. Then proceed with any follow-up.
+After you run any copilot action that mutates data (e.g., updateServiceTitle, updateServiceCategory, updateServiceDescription), call getServiceById again with the same serviceId to ensure the context reflects the server state for subsequent turns.
 If the user asks to change the category, map their input to one of allowed_categories (case-insensitive). If it matches, call updateServiceCategory with serviceId and the matched label. If it doesn’t match, ask them to choose from allowed_categories.
 Use searchServices for discovery, updateServiceTitle only for confirmed title changes."
     />
