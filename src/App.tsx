@@ -67,6 +67,25 @@ function ChatWithPersistence() {
     // we rely on messages changing to re-run
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, activeService?._id]);
+
+  // Listen for search queries from the Bubble parent via postMessage
+  useEffect(() => {
+    function handler(e: MessageEvent) {
+      const d = e.data as any;
+      if (!d || typeof d !== 'object') return;
+      // SEARCH_QUERY: { type: 'SEARCH_QUERY', query: string }
+      if (d.type === 'SEARCH_QUERY' && typeof d.query === 'string' && d.query.trim()) {
+        const now = new Date().toISOString();
+        const q = String(d.query).trim();
+        setMessages((prev: any[]) => [
+          ...prev,
+          new TextMessage({ id: `ext-q-${Date.now()}`, role: 'user' as any, content: q, createdAt: now }),
+        ]);
+      }
+    }
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [setMessages]);
    
   // initially load from local storage
   useEffect(() => {
