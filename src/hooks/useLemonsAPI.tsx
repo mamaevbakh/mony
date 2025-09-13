@@ -1,34 +1,29 @@
 import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core";
 import { useEffect, useState } from "react";
+import { algoliasearch } from 'algoliasearch';
 
-// Service interface based on your Bubble fields
-interface Service {
+// Domain types
+export interface Service {
   _id: string;
   title: string;
-  price: number;
-  delivery_days: number;
-  description: string;
+  description?: string;
   category?: string;
-  "Created Date"?: string;
-  "Modified Date"?: string;
+  price?: number;
+  delivery_days?: number;
 }
 
-// Package interface based on Bubble "package" type (assumed fields)
-interface LemonPackage {
+export interface LemonPackage {
   _id: string;
-  // Bubble fields per your screenshot
   name?: string;
-  title?: string; // fallback if some records still use title
-  price?: number;
-  delivery?: string; // text in Bubble
+  title?: string; // some Bubble apps use title for package name
   package_description?: string;
+  price?: number;
+  delivery?: string; // e.g., "3 days"
   revisions?: string;
   included?: string[];
-  service?: string; // reference to parent service id (if any)
 }
 
-// User interface (safe fields only)
-interface LemonUser {
+export interface LemonUser {
   _id: string;
   firstName?: string;
   lastName?: string;
@@ -37,7 +32,6 @@ interface LemonUser {
   tagline?: string;
   skills?: string[];
 }
-
 export function useLemonsAPI() {
   // Token (consider moving to env: VITE_BUBBLE_TOKEN)
   const BUBBLE_TOKEN = (import.meta as any)?.env?.VITE_BUBBLE_TOKEN || '67205b2400911e48fdfd7e7ea9cac75c';
@@ -47,7 +41,6 @@ export function useLemonsAPI() {
   const ENV_SERVICE_PACKAGES_FIELD = (import.meta as any)?.env?.VITE_BUBBLE_SERVICE_PACKAGES_FIELD as string | undefined;
 
   // Allowed categories (adjust to match Bubble field options)
-  // Allowed categories as provided by Bubble (case-insensitive match in handler)
   const ALLOWED_CATEGORIES = [
     'Branding & Identity',
     'Web Design',
@@ -289,42 +282,102 @@ export function useLemonsAPI() {
     return () => window.removeEventListener('message', handler);
   }, []);
 
-  // searchServices action
+  // searchServices action (Algolia primary, Bubble fallback)
   useCopilotAction({
     name: "searchServices",
-    description: "Search for service providers on Lemons platform. Use this when users ask about finding professionals like web designers, developers, marketers, consultants, etc.",
+    description: "Search for services using Algolia (primary). Falls back to Bubble if Algolia isn’t configured.",
     parameters: [
-      { name: "serviceType", type: "string", description: "The type of service or person to search for (e.g., 'web designer', 'web developer', 'marketing', 'consulting')", required: false },
-      { name: "maxPrice", type: "number", description: "Maximum price filter for services", required: false },
-      { name: "maxDeliveryDays", type: "number", description: "Maximum delivery days filter", required: false },
-      { name: "limit", type: "number", description: "Maximum number of results to return (default: 10)", required: false }
+      { name: "query", type: "string", description: "Free text to match service title/description", required: false },
+      { name: "category", type: "string", description: `Category filter (one of: ${ALLOWED_CATEGORIES.join(', ')})`, required: false },
+      { name: "maxPrice", type: "number", description: "Maximum price filter (applied to lowest package price)", required: false },
+      { name: "maxDeliveryDays", type: "number", description: "Maximum delivery days (applied to parsed package deliveries)", required: false },
+      { name: "limit", type: "number", description: "Max results to return (default: 10)", required: false },
+      { name: "page", type: "number", description: "Page number (0-based)", required: false }
     ],
-    handler: async ({ serviceType, maxPrice, maxDeliveryDays, limit = 10 }) => {
+    handler: async ({ query, category, maxPrice, maxDeliveryDays, limit = 10, page = 0 }) => {
       try {
-        const constraints: any[] = [];
-        if (serviceType) {
-          constraints.push({ key: 'title', constraint_type: 'text contains', value: serviceType });
+        // Require Algolia config
+        const ALG_APP_ID = (import.meta as any)?.env?.VITE_ALGOLIA_APP_ID || 'R54SIWV9I8';
+        const ALG_SEARCH_KEY = (import.meta as any)?.env?.VITE_ALGOLIA_SEARCH_KEY || '39142b31be9276bc327e0d9851e9d172';
+        const ALG_INDEX = (import.meta as any)?.env?.VITE_ALGOLIA_INDEX || 'services';
+
+        // Validate category if provided
+        let normalizedCategory: string | undefined = undefined;
+        if (category) {
+          const match = ALLOWED_CATEGORIES.find((c) => c.toLowerCase() === String(category).trim().toLowerCase());
+          if (!match) {
+            return { success: false, message: `Category must be one of: ${ALLOWED_CATEGORIES.join(', ')}` };
+          }
+          normalizedCategory = match;
         }
-        if (maxPrice) constraints.push({ key: 'price', constraint_type: 'less than', value: maxPrice.toString() });
-        if (maxDeliveryDays) constraints.push({ key: 'delivery_days', constraint_type: 'less than', value: maxDeliveryDays.toString() });
-        const baseUrl = "https://lemonslemons.co/version-live/api/1.1/obj/service";
-        const params = new URLSearchParams();
-        if (constraints.length) params.append('constraints', JSON.stringify(constraints));
-        params.append('limit', limit.toString());
-        params.append('sort_field', 'price');
-        params.append('descending', 'false');
-        const url = `${baseUrl}?${params.toString()}`;
-        const response = await fetch(url, {
-          method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${BUBBLE_TOKEN}`,
-              'Content-Type': 'application/json'
-            }
+
+        // Algolia-only path
+        const client = algoliasearch(ALG_APP_ID, ALG_SEARCH_KEY);
+        const facetFilters: string[][] = [];
+        if (normalizedCategory) facetFilters.push([`service_category:${normalizedCategory}`]);
+
+        const searchParams: any = {
+          hitsPerPage: Math.max(1, Number(limit) || 10),
+          page: Math.max(0, Number(page) || 0),
+          attributesToRetrieve: [
+            'objectID',
+            'service_title',
+            'service_description',
+            'service_category',
+            'service_packages',
+            'service_created_date',
+            'service_modified_date',
+          ],
+          ...(facetFilters.length ? { facetFilters } : {}),
+        };
+
+        const res: any = await client.search({
+          requests: [
+            {
+              indexName: ALG_INDEX,
+              type: 'default',
+              query: query || '',
+              ...searchParams,
+            },
+          ],
         });
-        if (!response.ok) throw new Error(`API call failed: ${response.status} ${response.statusText}`);
-        const data = await response.json();
-        const services: Service[] = data.response?.results || [];
-        return { success: true, services, searchCriteria: { serviceType, maxPrice, maxDeliveryDays, limit }, displayOnly: true };
+        const hits: any[] = Array.isArray(res?.results?.[0]?.hits) ? res.results[0].hits : [];
+
+        const mapped: Service[] = hits.map((h) => {
+          const pkgs: any[] = Array.isArray(h.service_packages) ? h.service_packages : [];
+          const prices = pkgs.map((p) => Number(p?.package_price)).filter((n) => Number.isFinite(n));
+          const minPrice = prices.length ? Math.min(...prices) : 0;
+          const deliveryDaysFromText = (txt?: string): number | undefined => {
+            if (!txt) return undefined;
+            const m = String(txt).match(/(\d+)/);
+            return m ? Number(m[1]) : undefined;
+          };
+          const deliveries = pkgs.map((p) => deliveryDaysFromText(p?.package_delivery)).filter((n) => Number.isFinite(n)) as number[];
+          const minDelivery = deliveries.length ? Math.min(...deliveries) : 0;
+          return {
+            _id: String(h.objectID || h._id || ''),
+            title: String(h.service_title || ''),
+            description: String(h.service_description || ''),
+            category: h.service_category ? String(h.service_category) : undefined,
+            price: minPrice,
+            delivery_days: minDelivery,
+          } as Service;
+        });
+
+        const filtered = mapped.filter((s) => {
+          const p = s.price ?? 0;
+          const d = s.delivery_days ?? 0;
+          if (typeof maxPrice === 'number' && Number.isFinite(maxPrice) && p > maxPrice) return false;
+          if (typeof maxDeliveryDays === 'number' && Number.isFinite(maxDeliveryDays) && d > maxDeliveryDays) return false;
+          return true;
+        });
+
+        return {
+          success: true,
+          services: filtered,
+          searchCriteria: { query, category: normalizedCategory, maxPrice, maxDeliveryDays, limit, page, provider: 'algolia' },
+          displayOnly: true,
+        };
       } catch (error) {
         return { success: false, error: error instanceof Error ? error.message : 'Unknown error', message: 'Sorry, I could not search services right now.' };
       }
@@ -334,7 +387,7 @@ export function useLemonsAPI() {
         return (
           <div style={{ padding: '16px', textAlign: 'center', backgroundColor: '#f9f8f5', borderRadius: '12px', border: '0.56px solid #e2e8d9' }}>
             <div style={{ display: 'inline-block', width: '24px', height: '24px', border: '3px solid #f3f3f3', borderTop: '3px solid #10b981', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-            <p style={{ marginTop: '12px', color: '#64748b', margin: '12px 0 0 0' }}>Searching for {args?.serviceType || 'services'}...</p>
+            <p style={{ marginTop: '12px', color: '#64748b', margin: '12px 0 0 0' }}>Searching for {args?.query || args?.category || 'services'}...</p>
           </div>
         );
       }
@@ -726,7 +779,7 @@ export function useLemonsAPI() {
                 {p.revisions && (<div style={{ color: '#6b7280', marginTop: 6 }}>Revisions: {p.revisions}</div>)}
                 {Array.isArray(p.included) && p.included.length > 0 && (
                   <ul style={{ color: '#6b7280', marginTop: 6, paddingLeft: 18 }}>
-                    {p.included.map((it, i) => (
+                    {p.included.map((it: string, i: number) => (
                       <li key={i}>{it}</li>
                     ))}
                   </ul>
@@ -981,7 +1034,8 @@ function ServiceResults({ services, searchCriteria, activeServiceId }: { service
         <span style={{ fontSize: '24px' }}>🍋</span>
         <h3 style={{ margin: 0, color: '#2c2c2c', fontSize: '18px', fontWeight: '600' }}>
           Found {services.length} service{services.length !== 1 ? 's' : ''}
-          {searchCriteria.serviceType && ` for "${searchCriteria.serviceType}"`}
+          {searchCriteria?.query && ` for "${searchCriteria.query}"`}
+          {(!searchCriteria?.query && searchCriteria?.category) && ` in ${searchCriteria.category}`}
         </h3>
       </div>
       {(searchCriteria.maxPrice || searchCriteria.maxDeliveryDays) && (
