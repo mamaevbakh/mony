@@ -75,7 +75,9 @@ function ChatWithPersistence() {
     console.debug('[Lemons iframe] Message listener mounting. App origin:', window.location.origin);
     // Notify parent that iframe is ready (optional for debugging)
     try {
-      window.parent?.postMessage({ type: 'LEMONS_IFRAME_READY', origin: window.location.origin }, '*');
+      const ready = { type: 'LEMONS_IFRAME_READY', origin: window.location.origin } as const;
+      try { window.top?.postMessage(ready, '*'); } catch {}
+      try { window.parent?.postMessage(ready, '*'); } catch {}
     } catch (e) {
       // ignore
     }
