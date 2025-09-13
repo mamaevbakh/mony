@@ -9,6 +9,7 @@ import { useLemonsAPI } from "./hooks/useLemonsAPI";
 // Move the component logic inside CopilotKit provider
 function ChatWithPersistence() {
   const { messages, setMessages } = useCopilotMessagesContext();
+  // Programmatic chat API isn't available in this version; we'll use setMessages fallback.
   
   // Initialize Lemons API functions
   const { activeService, refreshServiceInfo } = useLemonsAPI() as any;
@@ -85,16 +86,14 @@ function ChatWithPersistence() {
       }
       // SEARCH_QUERY: { type: 'SEARCH_QUERY', query: string }
       if (d.type === 'SEARCH_QUERY' && typeof d.query === 'string' && d.query.trim()) {
-        console.debug('[Lemons iframe] Received SEARCH_QUERY', { query: d.query }, 'from', e.origin, '→ adding user message');
+        console.debug('[Lemons iframe] Received SEARCH_QUERY', { query: d.query }, 'from', e.origin, '→ add & submit');
         const now = new Date().toISOString();
         const q = String(d.query).trim();
-        setMessages((prev: any[]) => {
-          const next = [
-            ...prev,
-            new TextMessage({ id: `ext-q-${Date.now()}`, role: 'user' as any, content: q, createdAt: now }),
-          ];
-          return next;
-        });
+        // Append the user message (our runtime uses on-change hooks to react)
+        setMessages((prev: any[]) => [
+          ...prev,
+          new TextMessage({ id: `ext-q-${Date.now()}`, role: 'user' as any, content: q, createdAt: now }),
+        ]);
       } else {
         console.debug('[Lemons iframe] Ignored message: wrong shape', d, 'from', e.origin);
       }
