@@ -1057,28 +1057,132 @@ function ServiceResults({ services, searchCriteria, activeServiceId }: { service
 }
 
 function ServiceCard({ service, selected }: { service: Service; selected?: boolean }) {
+  // Format EUR price properly
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat('en-EU', {
+      style: 'currency',
+      currency: 'EUR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(price);
+  };
+
   return (
-    <div style={{ border: selected ? '2px solid #fbbf24' : '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', backgroundColor: '#ffffff', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', transition: 'all 0.2s ease', cursor: 'pointer' }}
-      onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.15)'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)'; }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
-        <h4 style={{ margin: 0, color: '#1e293b', fontSize: '18px', fontWeight: '600', lineHeight: '1.3' }}>{service.title || '(untitled)'}</h4>
-        <div style={{ fontSize: '20px', fontWeight: '700', color: '#10b981', marginLeft: '16px', flexShrink: 0 }}>${service.price}</div>
+    <div style={{ 
+      border: selected ? '1px solid #E4D9CD' : '1px solid #f0f0f0', 
+      borderRadius: '24px', 
+      padding: '24px', 
+      backgroundColor: '#F9F8F5', 
+      boxShadow: '0 1px 3px rgba(0,0,0,0.1)', 
+      transition: 'all 0.3s ease', 
+      cursor: 'pointer',
+      position: 'relative',
+      overflow: 'hidden'
+    }}
+      onMouseEnter={(e) => { 
+        e.currentTarget.style.transform = 'translateY(-2px)'; 
+        e.currentTarget.style.boxShadow = '0 8px 32px rgba(0,0,0,0.12)'; 
+      }}
+      onMouseLeave={(e) => { 
+        e.currentTarget.style.transform = 'translateY(0)'; 
+        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)'; 
+      }}>
+      
+      {/* Header with title and price */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', gap: '16px' }}>
+        <h4 style={{ 
+          margin: 0, 
+          color: '#2B2B2B', 
+          fontSize: '20px', 
+          fontFamily: 'Playfair Display, serif', 
+          fontWeight: '700', 
+          lineHeight: '1.3',
+          flex: '1',
+          minWidth: '0' // Allow text to wrap
+        }}>
+          {service.title || '(untitled)'}
+        </h4>
+        <div style={{ 
+          fontSize: '24px', 
+          fontWeight: '700', 
+          color: '#2B2B2B', 
+          fontFamily: 'Inter, sans-serif',
+          flexShrink: 0,
+          padding: '4px 0'
+        }}>
+          {formatPrice(service.price || 0)}
+        </div>
       </div>
+      
+      {/* Description */}
       {service.description && (
-        <p style={{ margin: '0 0 16px 0', color: '#64748b', fontSize: '14px', lineHeight: '1.5' }}>
-          {service.description.length > 200 ? `${service.description.substring(0, 200)}...` : service.description}
+        <p style={{ 
+          margin: '0 0 20px 0', 
+          color: '#64748b', 
+          fontSize: '14px', 
+          lineHeight: '1.6',
+          fontFamily: 'Inter, sans-serif'
+        }}>
+          {service.description.length > 180 ? `${service.description.substring(0, 180)}...` : service.description}
         </p>
       )}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingTop: '12px', borderTop: '1px solid #f1f5f9' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#6b7280', fontSize: '14px' }}>
-          <span>⏱️</span>
+      
+      {/* Footer with delivery info and CTA */}
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        paddingTop: '16px', 
+        borderTop: '1px solid #e2e8f0' 
+      }}>
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '8px', 
+          color: '#64748b', 
+          fontSize: '14px',
+          fontFamily: 'Inter, sans-serif'
+        }}>
+          <span style={{ fontSize: '16px' }}>⏱️</span>
           <span>{service.delivery_days} day{service.delivery_days !== 1 ? 's' : ''} delivery</span>
         </div>
-        <button onClick={() => { try { const msg = { type: 'VIEW_OFFER', id: service._id }; console.debug('[lemons] View offer click, posting VIEW_OFFER', { ...msg, from: window.location.origin }); try { window.top?.postMessage(msg, '*'); } catch {} try { window.parent?.postMessage(msg, '*'); } catch {} } catch (e) { console.debug('postMessage VIEW_OFFER failed', e); } }}
-          style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', marginLeft: 'auto', transition: 'background-color 0.2s' }}
-          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#059669'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#10b981'; }}>View offer</button>
+        
+        <button 
+          onClick={() => { 
+            try { 
+              const msg = { type: 'VIEW_OFFER', id: service._id }; 
+              console.debug('[lemons] View offer click, posting VIEW_OFFER', { ...msg, from: window.location.origin }); 
+              try { window.top?.postMessage(msg, '*'); } catch {} 
+              try { window.parent?.postMessage(msg, '*'); } catch {} 
+            } catch (e) { 
+              console.debug('postMessage VIEW_OFFER failed', e); 
+            } 
+          }}
+          style={{ 
+            backgroundColor: '#2B2B2B', 
+            color: 'white', 
+            border: 'none', 
+            padding: '10px 20px', 
+            borderRadius: '10px', 
+            cursor: 'pointer', 
+            fontSize: '14px', 
+            fontWeight: '500', 
+            fontFamily: 'Inter, sans-serif',
+            transition: 'all 0.2s ease',
+            boxShadow: 'none'
+          }}
+          onMouseEnter={(e) => { 
+            e.currentTarget.style.backgroundColor = '#1A1A1A'; 
+            e.currentTarget.style.transform = 'translateY(-1px)';
+            e.currentTarget.style.color = 'white';
+          }}
+          onMouseLeave={(e) => { 
+            e.currentTarget.style.backgroundColor = '#2B2B2B'; 
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.color = 'white';
+          }}>
+          View offer
+        </button>
       </div>
     </div>
   );
