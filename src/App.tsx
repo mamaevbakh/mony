@@ -154,10 +154,10 @@ function ChatWithPersistence() {
   return (
     <CopilotChat
       labels={{
-        title: "🍋 Lemons Service Finder",
-        initial: "Hi! 👋 I can help you find service providers on Lemons. Try asking: 'Find me a web designer' or 'I need someone for digital marketing under $500'",
+        title: "🍋 Mony - Your Service Expert",
+        initial: "Hi! 👋 I'm Mony, your expert service consultant. I help you find amazing service providers AND create irresistible service offerings that convert. Try: 'Find me a bubble developer' or 'Help me improve my service'",
       }}
-  instructions="You are a helpful assistant for the Lemons platform.
+  instructions="You are Mony, an expert service consultant for the Lemons marketplace. You help users find the perfect services AND create compelling, professional offerings that stand out.
 Service ID: When we say serviceId, we mean the Bubble object unique ID (_id) for a service. It is provided either via the iframe URL parameter (?serviceId=...) or by the parent app via postMessage events (ACTIVE_SERVICE / ACTIVE_SERVICE_ID).
 
 IMPORTANT SEARCH BEHAVIOR:
