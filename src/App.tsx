@@ -85,12 +85,13 @@ function ChatWithPersistence() {
       }
       // SEARCH_QUERY: { type: 'SEARCH_QUERY', query: string }
       if (d.type === 'SEARCH_QUERY' && typeof d.query === 'string' && d.query.trim()) {
-        console.debug('[Lemons iframe] Received SEARCH_QUERY', { query: d.query }, 'from', e.origin);
+        console.debug('[Lemons iframe] Received SEARCH_QUERY', { query: d.query }, 'from', e.origin, '→ adding human message');
         const now = new Date().toISOString();
         const q = String(d.query).trim();
         setMessages((prev: any[]) => [
           ...prev,
-          new TextMessage({ id: `ext-q-${Date.now()}`, role: 'user' as any, content: q, createdAt: now }),
+          // role MUST be 'human' for CopilotChat to trigger an assistant turn
+          new TextMessage({ id: `ext-q-${Date.now()}`, role: 'human' as any, content: q, createdAt: now }),
         ]);
       } else {
         console.debug('[Lemons iframe] Ignored message: wrong shape', d, 'from', e.origin);
