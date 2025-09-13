@@ -70,6 +70,13 @@ function ChatWithPersistence() {
 
   // Listen for search queries from the Bubble parent via postMessage
   useEffect(() => {
+    console.debug('[Lemons iframe] Message listener mounting. App origin:', window.location.origin);
+    // Notify parent that iframe is ready (optional for debugging)
+    try {
+      window.parent?.postMessage({ type: 'LEMONS_IFRAME_READY', origin: window.location.origin }, '*');
+    } catch (e) {
+      // ignore
+    }
     function handler(e: MessageEvent) {
       const d = e.data as any;
       if (!d || typeof d !== 'object') {
