@@ -72,15 +72,21 @@ function ChatWithPersistence() {
   useEffect(() => {
     function handler(e: MessageEvent) {
       const d = e.data as any;
-      if (!d || typeof d !== 'object') return;
+      if (!d || typeof d !== 'object') {
+        console.debug('[Lemons iframe] Ignored message: not an object', e.data, 'from', e.origin);
+        return;
+      }
       // SEARCH_QUERY: { type: 'SEARCH_QUERY', query: string }
       if (d.type === 'SEARCH_QUERY' && typeof d.query === 'string' && d.query.trim()) {
+        console.debug('[Lemons iframe] Received SEARCH_QUERY', { query: d.query }, 'from', e.origin);
         const now = new Date().toISOString();
         const q = String(d.query).trim();
         setMessages((prev: any[]) => [
           ...prev,
           new TextMessage({ id: `ext-q-${Date.now()}`, role: 'user' as any, content: q, createdAt: now }),
         ]);
+      } else {
+        console.debug('[Lemons iframe] Ignored message: wrong shape', d, 'from', e.origin);
       }
     }
     window.addEventListener('message', handler);
