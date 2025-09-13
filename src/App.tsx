@@ -1,6 +1,6 @@
 import { CopilotKit } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
-import { useCopilotMessagesContext } from "@copilotkit/react-core";
+import { useCopilotMessagesContext, useCopilotChat } from "@copilotkit/react-core";
 import { ActionExecutionMessage, ResultMessage, TextMessage, MessageRole } from "@copilotkit/runtime-client-gql";
 import "@copilotkit/react-ui/styles.css";
 import { useEffect, useRef } from "react";
@@ -9,6 +9,7 @@ import { useLemonsAPI } from "./hooks/useLemonsAPI";
 // Move the component logic inside CopilotKit provider
 function ChatWithPersistence() {
   const { messages, setMessages } = useCopilotMessagesContext();
+  const chat = useCopilotChat();
   // Programmatic chat API isn't available in this version; we'll use setMessages fallback.
   
   // Initialize Lemons API functions
@@ -89,7 +90,17 @@ function ChatWithPersistence() {
         console.debug('[Lemons iframe] Received SEARCH_QUERY', { query: d.query }, 'from', e.origin, '→ add & submit');
         const now = new Date().toISOString();
         const q = String(d.query).trim();
-        // Append the user message with a valid enum role
+        // Preferred: append via chat API (triggers assistant)
+        try {
+          if (chat && typeof (chat as any).appendMessage === 'function') {
+            (chat as any).appendMessage(new TextMessage({ role: MessageRole.User, content: q }))
+              .catch((err: any) => console.debug('[Lemons iframe] appendMessage failed', err));
+            return;
+          }
+        } catch (err) {
+          console.debug('[Lemons iframe] useCopilotChat unavailable, falling back', err);
+        }
+        // Fallback: append directly (may rely on auto-run in some versions)
         setMessages((prev: any[]) => [
           ...prev,
           new TextMessage({ id: `ext-q-${Date.now()}`, role: MessageRole.User as any, content: q, createdAt: now }),
@@ -100,7 +111,7 @@ function ChatWithPersistence() {
     }
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [setMessages]);
+  }, [chat, setMessages]);
    
   // initially load from local storage
   useEffect(() => {
