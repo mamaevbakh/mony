@@ -1075,7 +1075,7 @@ function ServiceCard({ service, selected }: { service: Service; selected?: boole
           <span>⏱️</span>
           <span>{service.delivery_days} day{service.delivery_days !== 1 ? 's' : ''} delivery</span>
         </div>
-        <button onClick={() => { try { window.parent?.postMessage({ type: 'VIEW_OFFER', id: service._id }, '*'); } catch (e) { console.debug('postMessage VIEW_OFFER failed', e); } }}
+        <button onClick={() => { try { (window.top || window.parent)?.postMessage({ type: 'VIEW_OFFER', id: service._id }, '*'); } catch (e) { console.debug('postMessage VIEW_OFFER failed', e); } }}
           style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', marginLeft: 'auto', transition: 'background-color 0.2s' }}
           onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#059669'; }}
           onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#10b981'; }}>View offer</button>
