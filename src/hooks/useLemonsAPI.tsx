@@ -282,10 +282,10 @@ export function useLemonsAPI() {
     return () => window.removeEventListener('message', handler);
   }, []);
 
-  // searchServices action (Algolia primary, Bubble fallback)
+  // searchServices action - Enhanced for expert consultation
   useCopilotAction({
     name: "searchServices",
-  description: "Search for services using Algolia. DO NOT infer or add category filters - only use category if the user explicitly mentions one (e.g. 'web design services' or 'find marketing services'). For general searches like 'bubble dev' or 'find me a developer', use query-only search without any category filter.",
+  description: "Search services intelligently. Use user's exact query for best Algolia matching. Suggest alternatives if no results. Present findings with enthusiasm and insights about pricing, delivery, and value proposition.",
     parameters: [
       { name: "query", type: "string", description: "Free text search query. Use this for all searches unless user specifically mentions a category.", required: false },
       { name: "category", type: "string", description: `Category filter - ONLY use if user explicitly mentions a category like 'web design' or 'marketing'. Available: ${ALLOWED_CATEGORIES.join(', ')}`, required: false },
