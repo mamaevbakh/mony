@@ -159,6 +159,13 @@ function ChatWithPersistence() {
       }}
   instructions="You are a helpful assistant for the Lemons platform.
 Service ID: When we say serviceId, we mean the Bubble object unique ID (_id) for a service. It is provided either via the iframe URL parameter (?serviceId=...) or by the parent app via postMessage events (ACTIVE_SERVICE / ACTIVE_SERVICE_ID).
+
+IMPORTANT SEARCH BEHAVIOR:
+- For searches like 'bubble dev', 'find me a developer', 'I need someone for X', use ONLY the query parameter
+- DO NOT infer categories from search terms - let Algolia handle the matching
+- ONLY use category parameter if user explicitly says 'find web design services' or 'I need marketing services'
+- Most searches should be query-only without category filters
+
 If the user asks for a better service title:
 1. Propose a concise, compelling title (<= 80 chars).
 2. If the user accepts OR clearly asks you to apply it, call updateServiceTitle with serviceId and newTitle.

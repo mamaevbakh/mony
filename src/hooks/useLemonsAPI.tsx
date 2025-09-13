@@ -285,10 +285,10 @@ export function useLemonsAPI() {
   // searchServices action (Algolia primary, Bubble fallback)
   useCopilotAction({
     name: "searchServices",
-  description: "Search for services using Algolia (primary). Only apply a category filter if the user explicitly provides one.",
+  description: "Search for services using Algolia. DO NOT infer or add category filters - only use category if the user explicitly mentions one (e.g. 'web design services' or 'find marketing services'). For general searches like 'bubble dev' or 'find me a developer', use query-only search without any category filter.",
     parameters: [
-      { name: "query", type: "string", description: "Free text to match service title/description", required: false },
-      { name: "category", type: "string", description: `Category filter (one of: ${ALLOWED_CATEGORIES.join(', ')})`, required: false },
+      { name: "query", type: "string", description: "Free text search query. Use this for all searches unless user specifically mentions a category.", required: false },
+      { name: "category", type: "string", description: `Category filter - ONLY use if user explicitly mentions a category like 'web design' or 'marketing'. Available: ${ALLOWED_CATEGORIES.join(', ')}`, required: false },
       { name: "maxPrice", type: "number", description: "Maximum price filter (applied to lowest package price)", required: false },
       { name: "maxDeliveryDays", type: "number", description: "Maximum delivery days (applied to parsed package deliveries)", required: false },
       { name: "limit", type: "number", description: "Max results to return (default: 10)", required: false },
