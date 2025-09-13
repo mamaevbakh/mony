@@ -285,7 +285,7 @@ export function useLemonsAPI() {
   // searchServices action (Algolia primary, Bubble fallback)
   useCopilotAction({
     name: "searchServices",
-    description: "Search for services using Algolia (primary). Falls back to Bubble if Algolia isn’t configured.",
+  description: "Search for services using Algolia (primary). Only apply a category filter if the user explicitly provides one.",
     parameters: [
       { name: "query", type: "string", description: "Free text to match service title/description", required: false },
       { name: "category", type: "string", description: `Category filter (one of: ${ALLOWED_CATEGORIES.join(', ')})`, required: false },
@@ -294,14 +294,14 @@ export function useLemonsAPI() {
       { name: "limit", type: "number", description: "Max results to return (default: 10)", required: false },
       { name: "page", type: "number", description: "Page number (0-based)", required: false }
     ],
-    handler: async ({ query, category, maxPrice, maxDeliveryDays, limit = 10, page = 0 }) => {
+  handler: async ({ query, category, maxPrice, maxDeliveryDays, limit = 10, page = 0 }) => {
       try {
         // Require Algolia config
         const ALG_APP_ID = (import.meta as any)?.env?.VITE_ALGOLIA_APP_ID || 'R54SIWV9I8';
         const ALG_SEARCH_KEY = (import.meta as any)?.env?.VITE_ALGOLIA_SEARCH_KEY || '39142b31be9276bc327e0d9851e9d172';
         const ALG_INDEX = (import.meta as any)?.env?.VITE_ALGOLIA_INDEX || 'services';
 
-        // Validate category if provided
+        // Validate category if explicitly provided; otherwise do NOT default or infer
         let normalizedCategory: string | undefined = undefined;
         if (category) {
           const match = ALLOWED_CATEGORIES.find((c) => c.toLowerCase() === String(category).trim().toLowerCase());
@@ -314,7 +314,9 @@ export function useLemonsAPI() {
         // Algolia-only path
         const client = algoliasearch(ALG_APP_ID, ALG_SEARCH_KEY);
         const facetFilters: string[][] = [];
-        if (normalizedCategory) facetFilters.push([`service_category:${normalizedCategory}`]);
+        if (normalizedCategory) {
+          facetFilters.push([`service_category:${normalizedCategory}`]);
+        }
 
         const searchParams: any = {
           hitsPerPage: Math.max(1, Number(limit) || 10),
@@ -1073,7 +1075,7 @@ function ServiceCard({ service, selected }: { service: Service; selected?: boole
           <span>⏱️</span>
           <span>{service.delivery_days} day{service.delivery_days !== 1 ? 's' : ''} delivery</span>
         </div>
-        <button onClick={() => { console.log('Contact service provider:', service); }}
+        <button onClick={() => { try { window.parent?.postMessage({ type: 'VIEW_OFFER', source: 'lemons-app', serviceId: service._id, service }, '*'); } catch (e) { console.debug('postMessage VIEW_OFFER failed', e); } }}
           style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', marginLeft: 'auto', transition: 'background-color 0.2s' }}
           onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#059669'; }}
           onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#10b981'; }}>View offer</button>
