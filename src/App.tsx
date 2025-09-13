@@ -1,7 +1,7 @@
 import { CopilotKit } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
 import { useCopilotMessagesContext } from "@copilotkit/react-core";
-import { ActionExecutionMessage, ResultMessage, TextMessage } from "@copilotkit/runtime-client-gql";
+import { ActionExecutionMessage, ResultMessage, TextMessage, MessageRole } from "@copilotkit/runtime-client-gql";
 import "@copilotkit/react-ui/styles.css";
 import { useEffect, useRef } from "react";
 import { useLemonsAPI } from "./hooks/useLemonsAPI";
@@ -89,10 +89,10 @@ function ChatWithPersistence() {
         console.debug('[Lemons iframe] Received SEARCH_QUERY', { query: d.query }, 'from', e.origin, '→ add & submit');
         const now = new Date().toISOString();
         const q = String(d.query).trim();
-        // Append the user message (our runtime uses on-change hooks to react)
+        // Append the user message with a valid enum role
         setMessages((prev: any[]) => [
           ...prev,
-          new TextMessage({ id: `ext-q-${Date.now()}`, role: 'user' as any, content: q, createdAt: now }),
+          new TextMessage({ id: `ext-q-${Date.now()}`, role: MessageRole.User as any, content: q, createdAt: now }),
         ]);
       } else {
         console.debug('[Lemons iframe] Ignored message: wrong shape', d, 'from', e.origin);
